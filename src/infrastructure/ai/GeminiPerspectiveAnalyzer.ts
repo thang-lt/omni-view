@@ -44,13 +44,27 @@ export class GeminiPerspectiveAnalyzer implements IPerspectiveAnalyzer {
     }
 
     const systemPrompt = `
-Bạn là "Perspective Lens" — hệ thống nghiên cứu đa chiều khách quan. 
-Nhiệm vụ của bạn là phân tích chủ đề/câu hỏi được cung cấp từ 2 góc nhìn đối lập (Ủng hộ vs Phản đối) một cách công bằng, trung lập, đi kèm số liệu thực tế và nguồn dẫn chứng uy tín.
+Bạn là một chuyên gia nghiên cứu đa chiều và xác thực thông tin (Multi-Perspective Fact-Checking & Research Specialist). 
+Nhiệm vụ của bạn là phân tích chủ đề/câu hỏi được cung cấp từ 2 góc nhìn đối lập (Ủng hộ vs Phản đối) một cách công bằng, đi kèm số liệu thực tế và nguồn dẫn chứng uy tín.
 
-Hãy trả về duy nhất một chuỗi JSON hợp lệ theo đúng cấu trúc TypeScript interface sau:
+Bước 1: Tìm kiếm các nguồn thông tin về chủ đề.
+QUY TẮC BẮT BUỘC (CRITICAL):
+1. Bắt buộc tra cứu thực tế từ nhiều nguồn thông tin độc lập và cập nhật mới nhất trước khi phản hồi.
+2. Tuyệt đối KHÔNG suy diễn hoặc tự bịa thông tin; giữ thái độ trung lập, khách quan, không phán xét đúng/sai mang tính chủ quan.
+3. Phạm vi nguồn tin cần bao quát:
+   - Cơ quan quản lý, văn bản pháp luật, báo chí chính thống (VnExpress, Tuổi Trẻ, Cổng TTĐT Chính phủ, TTXVN, Nhân Dân...).
+   - Các hãng tin quốc tế (BBC, RFA, VOA, Reuters...), giới học giả, luật sư, chuyên gia độc lập hoặc các tổ chức nghiên cứu chuyên ngành.
+
+Bước 2: Phân tích và tổng hợp thông tin từ các nguồn đã tìm thấy.
+Chia ra 2 góc nhìn: Ủng hộ và Phản đối (Lưu ý không phải chủ đề nào cũng có 2 góc nhìn)
+
+Nếu có 2 góc nhìn (tức chủ đề có 2 mặt) thì:
+- Mỗi góc nhìn cần ít nhất 2 luận điểm
+- Mỗi luận điểm cần có số liệu và nguồn dẫn chứng
+Hãy trả về một chuỗi JSON hợp lệ theo đúng cấu trúc TypeScript interface sau:
 {
-  "title": "Tên chủ đề được chuẩn hóa",
-  "neutralSummary": "Tóm tắt trung lập 2-3 câu ngắn gọn toàn bộ bức tranh",
+  "title": "Tiêu đề",
+  "neutralSummary": "Tóm tắt trung lập ngắn gọn toàn bộ bức tranh",
   "proTitle": "Tiêu đề góc nhìn Ủng hộ (Pros)",
   "proSummary": "Tóm tắt ngắn gọn lập trường ủng hộ",
   "proArguments": [
@@ -58,10 +72,10 @@ Hãy trả về duy nhất một chuỗi JSON hợp lệ theo đúng cấu trúc
       "id": "arg-pro-1",
       "claim": "Luận điểm ủng hộ chính 1",
       "reasoning": "Giải thích lập luận chi tiết",
-      "metric": "Số liệu cụ thể (VD: +40% Năng suất, 97M Việc làm...)",
+      "metric": "Số liệu cụ thể (nếu có)",
       "evidenceDescription": "Mô tả dẫn chứng hoặc ngữ cảnh số liệu",
-      "sourceName": "Tên tổ chức/nguồn uy tín (VD: World Economic Forum, MIT)",
-      "sourceUrl": "https://url-nguon-tham-khao.com",
+      "sourceName": "Tên tổ chức / Hãng tin / Cơ quan phát hành",
+      "sourceUrl": "Đường dẫn (URL) có thật",
       "sourceTitle": "Tên bài viết hoặc báo cáo"
     }
   ],
@@ -72,10 +86,10 @@ Hãy trả về duy nhất một chuỗi JSON hợp lệ theo đúng cấu trúc
       "id": "arg-con-1",
       "claim": "Luận điểm phản biện chính 1",
       "reasoning": "Giải thích lập luận chi tiết",
-      "metric": "Số liệu rủi ro/chi phí (VD: -18% Kết nối, $11k Chi phí...)",
+      "metric": "Số liệu rủi ro/chi phí (nếu có)",
       "evidenceDescription": "Mô tả dẫn chứng hoặc ngữ cảnh số liệu",
-      "sourceName": "Tên tổ chức/nguồn uy tín (VD: Goldman Sachs, Harvard)",
-      "sourceUrl": "https://url-nguon-tham-khao.com",
+      "sourceName": "Tên tổ chức / Hãng tin / Cơ quan phát hành",
+      "sourceUrl": "Đường dẫn (URL) có thật",
       "sourceTitle": "Tên bài viết hoặc báo cáo"
     }
   ]
@@ -84,11 +98,16 @@ Hãy trả về duy nhất một chuỗi JSON hợp lệ theo đúng cấu trúc
 Lưu ý:
 - Phải trả về JSON hoàn chỉnh, không có markdown codeblock xung quanh nếu có thể, hoặc nằm trong JSON parseable string.
 - Dữ liệu phải bằng tiếng Việt.
-- Nguồn sourceUrl phải là đường dẫn URL hợp lệ bắt đầu bằng https://.
 - Mỗi bên (Ủng hộ & Phản đối) cần 2 đến 3 luận điểm sâu sắc.
 `;
 
     const userPrompt = `Chủ đề cần phân tích đa chiều: "${query}"`;
+
+    console.group('%c🚀 [PERSPECTIVE LENS] PROMPT GỬI TỚI GEMINI API', 'color: #6366f1; font-weight: bold; font-size: 13px;');
+    console.log('📌 QUERY NGƯỜI DÙNG:', query);
+    console.log('📝 SYSTEM PROMPT:\n', systemPrompt);
+    console.log('💬 USER PROMPT:\n', userPrompt);
+    console.groupEnd();
 
     const requestBody = {
       contents: [
@@ -106,7 +125,7 @@ Lưu ý:
     };
 
     // Models to try in order of preference
-    const models = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.0-flash'];
+    const models = ['gemini-flash-latest', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-flash-lite', 'gemini-1.5-flash'];
     let lastError: Error | null = null;
 
     for (const model of models) {
@@ -134,6 +153,10 @@ Lưu ý:
         if (!rawText) {
           throw new Error('Gemini API không trả về kết quả nội dung.');
         }
+
+        console.group(`%c✅ [PERSPECTIVE LENS] OUTPUT NGUYÊN BẢN TỪ GEMINI (${model})`, 'color: #10b981; font-weight: bold; font-size: 13px;');
+        console.log(rawText);
+        console.groupEnd();
 
         const parsedJson = this.parseJsonFromText(rawText);
         return this.mapJsonToTopic(query, parsedJson);
@@ -168,21 +191,21 @@ Lưu ý:
     const proArguments = (json.proArguments || []).map((arg, idx) => {
       const evidences = arg.metric
         ? [
-            new Evidence({
-              metric: arg.metric,
-              description: arg.evidenceDescription || arg.claim,
-            }),
-          ]
+          new Evidence({
+            metric: arg.metric,
+            description: arg.evidenceDescription || arg.claim,
+          }),
+        ]
         : [];
 
       const citations = arg.sourceUrl && arg.sourceName
         ? [
-            new Citation({
-              url: arg.sourceUrl.startsWith('http') ? arg.sourceUrl : `https://${arg.sourceUrl}`,
-              title: arg.sourceTitle || arg.sourceName,
-              sourceName: arg.sourceName,
-            }),
-          ]
+          new Citation({
+            url: arg.sourceUrl.startsWith('http') ? arg.sourceUrl : `https://${arg.sourceUrl}`,
+            title: arg.sourceTitle || arg.sourceName,
+            sourceName: arg.sourceName,
+          }),
+        ]
         : [];
 
       return new Argument({
@@ -197,21 +220,21 @@ Lưu ý:
     const conArguments = (json.conArguments || []).map((arg, idx) => {
       const evidences = arg.metric
         ? [
-            new Evidence({
-              metric: arg.metric,
-              description: arg.evidenceDescription || arg.claim,
-            }),
-          ]
+          new Evidence({
+            metric: arg.metric,
+            description: arg.evidenceDescription || arg.claim,
+          }),
+        ]
         : [];
 
       const citations = arg.sourceUrl && arg.sourceName
         ? [
-            new Citation({
-              url: arg.sourceUrl.startsWith('http') ? arg.sourceUrl : `https://${arg.sourceUrl}`,
-              title: arg.sourceTitle || arg.sourceName,
-              sourceName: arg.sourceName,
-            }),
-          ]
+          new Citation({
+            url: arg.sourceUrl.startsWith('http') ? arg.sourceUrl : `https://${arg.sourceUrl}`,
+            title: arg.sourceTitle || arg.sourceName,
+            sourceName: arg.sourceName,
+          }),
+        ]
         : [];
 
       return new Argument({

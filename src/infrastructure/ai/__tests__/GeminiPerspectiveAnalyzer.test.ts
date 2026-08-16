@@ -13,13 +13,14 @@ describe('Infrastructure Layer: GeminiPerspectiveAnalyzer', () => {
   });
 
   it('should throw error if API key is not configured', async () => {
+    vi.spyOn(ApiKeyRepository, 'getApiKey').mockReturnValue('');
     await expect(analyzer.analyzeTopic('Test query')).rejects.toThrow(
       'Chưa cấu hình Google Gemini API Key'
     );
   });
 
   it('should call Gemini API and return domain Topic model', async () => {
-    ApiKeyRepository.saveApiKey('mock-gemini-key');
+    vi.spyOn(ApiKeyRepository, 'getApiKey').mockReturnValue('mock-gemini-key');
 
     const fakeJsonResponse = {
       title: 'Phân tích Trí tuệ Nhân tạo',
