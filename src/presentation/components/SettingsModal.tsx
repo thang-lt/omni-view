@@ -39,8 +39,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: 'rgba(5, 8, 15, 0.85)',
-        backdropFilter: 'blur(8px)',
+        backgroundColor: 'rgba(15, 23, 42, 0.6)',
+        backdropFilter: 'blur(4px)',
         zIndex: 1000,
         display: 'flex',
         alignItems: 'center',
@@ -53,9 +53,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
         style={{
           width: '100%',
           maxWidth: '520px',
-          backgroundColor: '#0f172a',
-          borderColor: 'rgba(99, 102, 241, 0.3)',
-          boxShadow: '0 20px 40px rgba(0,0,0,0.6)',
+          backgroundColor: 'var(--bg-card)',
+          borderColor: 'var(--border-subtle)',
+          boxShadow: 'var(--shadow-modal)',
           position: 'relative',
         }}
       >
@@ -75,12 +75,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
         </button>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1rem' }}>
-          <Key size={22} color="#6366f1" />
-          <h2 style={{ fontSize: '1.3rem', fontWeight: 700 }}>Cấu hình Google Gemini API Key</h2>
+          <Key size={22} color="var(--accent-primary)" />
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 700, fontFamily: 'var(--font-serif)' }}>Cấu hình Google Gemini API Key</h2>
         </div>
 
-        <p style={{ fontSize: '0.92rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
-          Perspective Lens sẽ trực tiếp gửi truy vấn nghiên cứu tới Google Gemini API để tổng hợp góc nhìn 2 chiều và bằng chứng số liệu thời gian thực.
+        <p style={{ fontSize: '0.92rem', color: 'var(--text-muted)', marginBottom: '1.25rem', lineHeight: '1.5' }}>
+          Omni-View sẽ trực tiếp gửi truy vấn nghiên cứu tới Google Gemini API để tổng hợp góc nhìn 2 chiều và bằng chứng số liệu thời gian thực.
         </p>
 
         <form onSubmit={handleSave}>
@@ -96,14 +96,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
             >
               Gemini API Key của bạn:
             </label>
-            <input
-              type="password"
-              className="search-input"
-              style={{ width: '100%', padding: '0.8rem 1rem', fontSize: '0.95rem' }}
-              placeholder="AIzaSy..."
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-            />
+
+            <div
+              style={{
+                background: 'var(--bg-card-subtle)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '0.2rem',
+              }}
+            >
+              <input
+                type="password"
+                className="search-input"
+                style={{ width: '100%', padding: '0.6rem 0.8rem', fontSize: '0.95rem' }}
+                placeholder="AIzaSy..."
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+              />
+            </div>
           </div>
 
           <div
@@ -114,12 +124,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
               fontSize: '0.82rem',
               color: 'var(--text-subtle)',
               marginBottom: '1.5rem',
-              background: 'rgba(30, 41, 59, 0.5)',
+              background: 'var(--accent-primary-bg)',
+              border: '1px solid rgba(37, 99, 235, 0.15)',
               padding: '0.75rem',
-              borderRadius: '8px',
+              borderRadius: 'var(--radius-sm)',
             }}
           >
-            <ShieldAlert size={16} color="#3b82f6" style={{ flexShrink: 0, marginTop: '2px' }} />
+            <ShieldAlert size={16} color="var(--accent-primary)" style={{ flexShrink: 0, marginTop: '2px' }} />
             <span>
               Key của bạn được bảo mật tuyệt đối và chỉ lưu trực tiếp tại bộ nhớ trình duyệt (localStorage) trên máy của bạn.
             </span>
@@ -130,14 +141,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
               type="button"
               className="pill-btn"
               onClick={onClose}
-              style={{ padding: '0.6rem 1.2rem' }}
+              style={{ padding: '0.5rem 1.2rem' }}
             >
               Hủy
             </button>
             <button
               type="submit"
               className="search-button"
-              style={{ padding: '0.6rem 1.4rem' }}
+              style={{ padding: '0.5rem 1.4rem' }}
               disabled={!apiKey.trim()}
             >
               {isSaved ? (

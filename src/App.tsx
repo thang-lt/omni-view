@@ -1,18 +1,35 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { usePerspectiveLens } from './presentation/hooks/usePerspectiveLens';
 import { SearchHeader } from './presentation/components/SearchHeader';
 import { TopicOverview } from './presentation/components/TopicOverview';
 import { RawSourceSection } from './presentation/components/RawSourceSection';
 import { PerspectiveColumn } from './presentation/components/PerspectiveColumn';
+import { ComparisonMatrix } from './presentation/components/ComparisonMatrix';
 import { SessionHistorySidebar } from './presentation/components/SessionHistorySidebar';
 import { SettingsModal } from './presentation/components/SettingsModal';
 import { Stance } from './domain/models/Stance';
-import { Key, Sparkles, Database, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { Key, Sparkles, Database, ShieldCheck, CheckCircle2, ThumbsUp, ThumbsDown, Scale, Columns } from 'lucide-react';
 
 import './presentation/styles/theme.css';
 
+type TabViewMode = 'pro' | 'con' | 'matrix' | 'split';
+
 export function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabViewMode>('pro');
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    return (localStorage.getItem('theme') as 'light' | 'dark') || 'light';
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
+  };
+
   const {
     currentTopic,
     history,
@@ -44,6 +61,8 @@ export function App() {
         onSearch={searchTopic}
         onOpenSettings={() => setIsSettingsOpen(true)}
         isLoading={isLoading}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
 
       <SettingsModal
@@ -56,9 +75,9 @@ export function App() {
         <div
           className="glass-card"
           style={{
-            borderColor: 'rgba(244, 63, 94, 0.4)',
-            backgroundColor: 'rgba(244, 63, 94, 0.1)',
-            color: '#fb7185',
+            borderColor: 'var(--border-con)',
+            backgroundColor: 'var(--accent-con-bg)',
+            color: 'var(--accent-con-text)',
             marginBottom: '1.5rem',
             textAlign: 'center',
             display: 'flex',
@@ -83,11 +102,11 @@ export function App() {
 
       {isLoading ? (
         <div className="glass-card loading-box">
-          <div className="spinner" style={{ marginBottom: '1rem' }}></div>
-          <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: '0 0 0.5rem 0' }}>
-            Hệ thống Multi-Agent đang phân tích chuyên sâu...
+          <div className="spinner"></div>
+          <h3 style={{ fontSize: '1.15rem', fontWeight: 700, margin: '0 0 0.5rem 0', fontFamily: 'var(--font-serif)' }}>
+            Hệ thống Multi-Agent đang tiến hành tổng hợp & nghiên cứu...
           </h3>
-          <p style={{ color: 'var(--accent-cyan)', fontWeight: 600, fontSize: '0.95rem', margin: '0 0 1.5rem 0' }}>
+          <p style={{ color: 'var(--accent-primary)', fontWeight: 600, fontSize: '0.92rem', margin: '0 0 1.5rem 0' }}>
             {stepMessage || 'Đang thực thi các Agent phân tích dữ liệu đa chiều...'}
           </p>
 
@@ -101,7 +120,7 @@ export function App() {
                   className={`agent-step-item ${isDone ? 'step-done' : ''} ${isCurrent ? 'step-current' : ''}`}
                 >
                   <div className="step-badge">
-                    {isDone ? <CheckCircle2 size={16} /> : st.num}
+                    {isDone ? <CheckCircle2 size={14} /> : st.num}
                   </div>
                   <span className="step-label">{st.label}</span>
                 </div>
@@ -116,7 +135,7 @@ export function App() {
               <>
                 <TopicOverview topic={currentTopic} />
 
-                {/* Step 1: Raw Sources Discovery */}
+                {/* Raw Sources Section */}
                 <RawSourceSection
                   sources={currentTopic.rawSources}
                   activeSourceId={activeSourceId}
@@ -124,9 +143,45 @@ export function App() {
                   onSelectSource={scrollToSource}
                 />
 
-                {/* Step 2: Split-Screen Deep Arguments */}
-                <div className="perspective-split">
-                  {proPerspective && (
+                {/* Segmented Reader Tab Controller */}
+                <nav className="reader-tab-bar">
+                  <button
+                    className={`reader-tab-btn tab-pro ${activeTab === 'pro' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('pro')}
+                  >
+                    <ThumbsUp size={16} color="var(--accent-pro-text)" />
+                    <span>Góc nhìn Ủng hộ (Pros)</span>
+                  </button>
+
+                  <button
+                    className={`reader-tab-btn tab-con ${activeTab === 'con' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('con')}
+                  >
+                    <ThumbsDown size={16} color="var(--accent-con-text)" />
+                    <span>Góc nhìn Phản đối (Cons)</span>
+                  </button>
+
+                  <button
+                    className={`reader-tab-btn tab-matrix ${activeTab === 'matrix' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('matrix')}
+                  >
+                    <Scale size={16} color="var(--accent-primary)" />
+                    <span>Bảng Đối Chiếu So Sánh</span>
+                  </button>
+
+                  <button
+                    className={`reader-tab-btn ${activeTab === 'split' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('split')}
+                    title="Xem 2 cột song song trên màn hình rộng"
+                  >
+                    <Columns size={16} />
+                    <span>Xem 2 Cột Song Song</span>
+                  </button>
+                </nav>
+
+                {/* Render Selected View */}
+                {activeTab === 'pro' && proPerspective && (
+                  <div className="single-column-reader-container">
                     <PerspectiveColumn
                       perspective={proPerspective}
                       rawSources={currentTopic.rawSources}
@@ -134,8 +189,11 @@ export function App() {
                       onHoverSource={setActiveSourceId}
                       onSelectSource={scrollToSource}
                     />
-                  )}
-                  {conPerspective && (
+                  </div>
+                )}
+
+                {activeTab === 'con' && conPerspective && (
+                  <div className="single-column-reader-container">
                     <PerspectiveColumn
                       perspective={conPerspective}
                       rawSources={currentTopic.rawSources}
@@ -143,23 +201,56 @@ export function App() {
                       onHoverSource={setActiveSourceId}
                       onSelectSource={scrollToSource}
                     />
-                  )}
-                </div>
+                  </div>
+                )}
+
+                {activeTab === 'matrix' && proPerspective && conPerspective && (
+                  <ComparisonMatrix
+                    proPerspective={proPerspective}
+                    conPerspective={conPerspective}
+                    rawSources={currentTopic.rawSources}
+                    onHoverSource={setActiveSourceId}
+                    onSelectSource={scrollToSource}
+                  />
+                )}
+
+                {activeTab === 'split' && (
+                  <div className="perspective-split">
+                    {proPerspective && (
+                      <PerspectiveColumn
+                        perspective={proPerspective}
+                        rawSources={currentTopic.rawSources}
+                        activeSourceId={activeSourceId}
+                        onHoverSource={setActiveSourceId}
+                        onSelectSource={scrollToSource}
+                      />
+                    )}
+                    {conPerspective && (
+                      <PerspectiveColumn
+                        perspective={conPerspective}
+                        rawSources={currentTopic.rawSources}
+                        activeSourceId={activeSourceId}
+                        onHoverSource={setActiveSourceId}
+                        onSelectSource={scrollToSource}
+                      />
+                    )}
+                  </div>
+                )}
               </>
             ) : (
-              <div className="glass-card" style={{ textAlign: 'center', padding: '4rem 1.5rem' }}>
-                <h3 style={{ fontSize: '1.4rem', fontWeight: 700, marginBottom: '0.5rem' }}>
-                  Hệ thống Nghiên cứu Đa chiều Multi-Agent với Gemini AI
+              <div className="glass-card" style={{ textAlign: 'center', padding: '3.5rem 1.5rem' }}>
+                <h3 style={{ fontSize: '1.3rem', fontWeight: 700, marginBottom: '0.6rem', fontFamily: 'var(--font-serif)' }}>
+                  Nền Tảng Nghiên Cứu & Trích Xuất Dữ Liệu Đa Chiều
                 </h3>
-                <p style={{ color: 'var(--text-muted)', maxWidth: '560px', margin: '0 auto 1.5rem auto' }}>
-                  Nhập bất kỳ câu hỏi tranh cãi nào để xem kết quả phân tích sâu 4 tầng: <strong>Trích xuất URL nguồn thật</strong>, <strong>Lý do luận điểm đúng</strong>, <strong>Lưu ý bối cảnh</strong> và <strong>Đánh giá thiên kiến nguồn tin</strong>.
+                <p style={{ color: 'var(--text-muted)', maxWidth: '580px', margin: '0 auto 1.5rem auto', lineHeight: '1.6' }}>
+                  Nhập bất kỳ câu hỏi hoặc chủ đề nghiên cứu nào để hệ thống Multi-Agent trích xuất: <strong>Trích dẫn nguồn thật</strong>, <strong>Lý do luận điểm hợp lý</strong>, <strong>Lưu ý bối cảnh hạn chế</strong> và <strong>Đánh giá thiên kiến truyền thông</strong>.
                 </p>
                 <button
                   onClick={() => setIsSettingsOpen(true)}
                   className="search-button"
                   style={{ margin: '0 auto' }}
                 >
-                  <Key size={18} /> Cấu hình Gemini API Key
+                  <Key size={16} /> Cấu hình Gemini API Key
                 </button>
               </div>
             )}

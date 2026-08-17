@@ -60,7 +60,7 @@ describe('Application Layer: Use Cases', () => {
       const useCase = new AnalyzeTopicUseCase(analyzer, repo);
       const result = await useCase.execute('Should crypto be strictly regulated?');
 
-      expect(analyzer.analyzeTopic).toHaveBeenCalledWith('Should crypto be strictly regulated?');
+      expect(analyzer.analyzeTopic).toHaveBeenCalledWith('Should crypto be strictly regulated?', undefined);
       expect(repo.saveTopic).toHaveBeenCalledWith(dummyTopic);
       expect(result.title).toBe('Crypto Regulation');
     });
