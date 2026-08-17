@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Settings, ShieldCheck, Sun, Moon, BookOpen } from 'lucide-react';
+import { Search, Settings, ShieldCheck, Sun, Moon, FileText } from 'lucide-react';
 import { ApiKeyRepository } from '../../infrastructure/config/ApiKeyRepository';
 
 interface SearchHeaderProps {
@@ -43,18 +43,18 @@ export const SearchHeader: React.FC<SearchHeaderProps> = ({
     <header className="header-section">
       <div className="header-top-bar">
         <div className="brand-badge">
-          <BookOpen size={14} />
-          <span>Omni-View Research Platform</span>
+          <FileText size={14} />
+          <span>INVESTIGATIVE RESEARCH DESK</span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
           <button
             onClick={onToggleTheme}
             className="theme-toggle-btn"
-            title={`Chuyển sang giao diện ${theme === 'light' ? 'Tối (Dark)' : 'Sáng (Light)'}`}
+            title={`Chuyển sang chế độ ${theme === 'light' ? 'Tối' : 'Sáng'}`}
           >
-            {theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}
-            <span>{theme === 'light' ? 'Giao diện Tối' : 'Giao diện Sáng'}</span>
+            {theme === 'light' ? <Moon size={14} /> : <Sun size={14} />}
+            <span>{theme === 'light' ? 'Chế độ Tối' : 'Chế độ Sáng'}</span>
           </button>
 
           <button
@@ -64,37 +64,37 @@ export const SearchHeader: React.FC<SearchHeaderProps> = ({
               display: 'flex',
               alignItems: 'center',
               gap: '0.4rem',
-              borderColor: hasKey ? 'var(--border-pro)' : 'var(--border-con)',
+              borderColor: hasKey ? 'var(--accent-pro-border)' : 'var(--accent-con-border)',
               backgroundColor: hasKey ? 'var(--accent-pro-bg)' : 'var(--accent-con-bg)',
               color: hasKey ? 'var(--accent-pro-text)' : 'var(--accent-con-text)',
-              padding: '0.4rem 0.8rem',
+              padding: '0.35rem 0.8rem',
               fontWeight: 600,
             }}
             title="Cấu hình Gemini API Key"
           >
-            {hasKey ? <ShieldCheck size={15} /> : <Settings size={15} />}
-            <span>{hasKey ? 'Gemini Key OK' : 'Nhập Gemini Key'}</span>
+            {hasKey ? <ShieldCheck size={14} /> : <Settings size={14} />}
+            <span>{hasKey ? 'Gemini Key Valid' : 'Cấu hình Key'}</span>
           </button>
         </div>
       </div>
 
-      <h1 className="main-title">Nền Tảng Phân Tích Nghiên Cứu Đa Chiều</h1>
+      <h1 className="main-title">Bàn Nghiên Cứu Điều Tra & Phân Tích Đa Chiều</h1>
       <p className="main-subtitle">
-        Trích xuất góc nhìn phản biện khách quan 2 mặt (Ủng hộ vs Phản đối) kèm trích dẫn số liệu & nguồn dữ liệu gốc thời gian thực.
+        Trích xuất và thẩm định chứng cứ 2 chiều (Ủng hộ vs Phản biện) kèm truy vết URL nguồn thật thời gian thực.
       </p>
 
       <form onSubmit={handleSubmit} className="search-box">
         <input
           type="text"
           className="search-input"
-          placeholder="Nhập đề tài hoặc câu hỏi tranh cãi cần nghiên cứu..."
+          placeholder="Nhập hồ sơ câu hỏi hoặc đề tài tranh cãi cần thẩm định..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           disabled={isLoading}
         />
         <button type="submit" className="search-button" disabled={isLoading || !query.trim()}>
-          <Search size={17} />
-          {isLoading ? 'Đang truy vết...' : 'Nghiên cứu'}
+          <Search size={16} />
+          {isLoading ? 'Đang thẩm định...' : 'Thẩm định'}
         </button>
       </form>
 
