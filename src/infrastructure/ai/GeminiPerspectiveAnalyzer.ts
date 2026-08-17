@@ -75,7 +75,7 @@ Hãy trả về một chuỗi JSON hợp lệ theo đúng cấu trúc TypeScript
       "metric": "Số liệu cụ thể (nếu có)",
       "evidenceDescription": "Mô tả dẫn chứng hoặc ngữ cảnh số liệu",
       "sourceName": "Tên tổ chức / Hãng tin / Cơ quan phát hành",
-      "sourceUrl": "Đường dẫn (URL) có thật",
+      "sourceUrl": "URL ĐẦY ĐỦ VÀ TRỰC TIẾP TỚI BÀI VIẾT (Ví dụ: https://domain.com/path-to-article.html)",
       "sourceTitle": "Tên bài viết hoặc báo cáo"
     }
   ],
@@ -89,7 +89,7 @@ Hãy trả về một chuỗi JSON hợp lệ theo đúng cấu trúc TypeScript
       "metric": "Số liệu rủi ro/chi phí (nếu có)",
       "evidenceDescription": "Mô tả dẫn chứng hoặc ngữ cảnh số liệu",
       "sourceName": "Tên tổ chức / Hãng tin / Cơ quan phát hành",
-      "sourceUrl": "Đường dẫn (URL) có thật",
+      "sourceUrl": "URL ĐẦY ĐỦ VÀ TRỰC TIẾP TỚI BÀI VIẾT (Ví dụ: https://domain.com/path-to-article.html)",
       "sourceTitle": "Tên bài viết hoặc báo cáo"
     }
   ]
