@@ -1,15 +1,25 @@
 import React from 'react';
 import { Perspective } from '../../domain/models/Perspective';
+import { RawSource } from '../../domain/models/RawSource';
 import { Stance } from '../../domain/models/Stance';
-import { EvidenceCard } from './EvidenceCard';
-import { CitationList } from './CitationList';
+import { DeepArgumentCard } from './DeepArgumentCard';
 import { ThumbsUp, ThumbsDown } from 'lucide-react';
 
 interface PerspectiveColumnProps {
   perspective: Perspective;
+  rawSources: RawSource[];
+  activeSourceId: string | null;
+  onHoverSource: (sourceId: string | null) => void;
+  onSelectSource: (sourceId: string) => void;
 }
 
-export const PerspectiveColumn: React.FC<PerspectiveColumnProps> = ({ perspective }) => {
+export const PerspectiveColumn: React.FC<PerspectiveColumnProps> = ({
+  perspective,
+  rawSources,
+  activeSourceId,
+  onHoverSource,
+  onSelectSource,
+}) => {
   const isPro = perspective.stance === Stance.PRO;
 
   return (
@@ -30,16 +40,14 @@ export const PerspectiveColumn: React.FC<PerspectiveColumnProps> = ({ perspectiv
 
       <div>
         {perspective.arguments.map((arg) => (
-          <div key={arg.id} className="argument-card">
-            <h4 className="argument-claim">{arg.claim}</h4>
-            <p className="argument-reasoning">{arg.reasoning}</p>
-
-            {arg.evidences.map((e, idx) => (
-              <EvidenceCard key={idx} evidence={e} />
-            ))}
-
-            <CitationList citations={arg.citations} />
-          </div>
+          <DeepArgumentCard
+            key={arg.id}
+            argument={arg}
+            rawSources={rawSources}
+            activeSourceId={activeSourceId}
+            onHoverSource={onHoverSource}
+            onSelectSource={onSelectSource}
+          />
         ))}
       </div>
     </div>

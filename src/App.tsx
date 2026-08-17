@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { usePerspectiveLens } from './presentation/hooks/usePerspectiveLens';
 import { SearchHeader } from './presentation/components/SearchHeader';
 import { TopicOverview } from './presentation/components/TopicOverview';
+import { RawSourceSection } from './presentation/components/RawSourceSection';
 import { PerspectiveColumn } from './presentation/components/PerspectiveColumn';
 import { SessionHistorySidebar } from './presentation/components/SessionHistorySidebar';
 import { SettingsModal } from './presentation/components/SettingsModal';
 import { Stance } from './domain/models/Stance';
-import { Key } from 'lucide-react';
+import { Key, Sparkles, Database, ShieldCheck, CheckCircle2 } from 'lucide-react';
 
 import './presentation/styles/theme.css';
 
@@ -17,6 +18,11 @@ export function App() {
     history,
     isLoading,
     error,
+    currentStep,
+    stepMessage,
+    activeSourceId,
+    setActiveSourceId,
+    scrollToSource,
     searchTopic,
     selectTopicFromHistory,
     clearSession,
@@ -24,6 +30,13 @@ export function App() {
 
   const proPerspective = currentTopic?.getPerspective(Stance.PRO);
   const conPerspective = currentTopic?.getPerspective(Stance.CON);
+
+  const stepsList = [
+    { num: 1, label: 'Truy vết Nguồn dữ liệu', icon: Database },
+    { num: 2, label: 'Phân tích Ủng hộ & Lý do', icon: Sparkles },
+    { num: 3, label: 'Phân tích Phản đối & Cảnh báo', icon: Sparkles },
+    { num: 4, label: 'Kiểm định Thiên kiến Nguồn', icon: ShieldCheck },
+  ];
 
   return (
     <div className="app-container">
@@ -70,13 +83,31 @@ export function App() {
 
       {isLoading ? (
         <div className="glass-card loading-box">
-          <div className="spinner"></div>
-          <p style={{ color: 'var(--text-muted)', fontWeight: 600 }}>
-            Đang gọi Google Gemini API để phân tích dữ liệu đa chiều thời gian thực...
+          <div className="spinner" style={{ marginBottom: '1rem' }}></div>
+          <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: '0 0 0.5rem 0' }}>
+            Hệ thống Multi-Agent đang phân tích chuyên sâu...
+          </h3>
+          <p style={{ color: 'var(--accent-cyan)', fontWeight: 600, fontSize: '0.95rem', margin: '0 0 1.5rem 0' }}>
+            {stepMessage || 'Đang thực thi các Agent phân tích dữ liệu đa chiều...'}
           </p>
-          <span style={{ fontSize: '0.85rem', color: 'var(--text-subtle)' }}>
-            Đang tổng hợp luận điểm, số liệu kiểm chứng và trích dẫn bài viết uy tín
-          </span>
+
+          <div className="multi-agent-steps-bar">
+            {stepsList.map((st) => {
+              const isDone = currentStep > st.num;
+              const isCurrent = currentStep === st.num;
+              return (
+                <div
+                  key={st.num}
+                  className={`agent-step-item ${isDone ? 'step-done' : ''} ${isCurrent ? 'step-current' : ''}`}
+                >
+                  <div className="step-badge">
+                    {isDone ? <CheckCircle2 size={16} /> : st.num}
+                  </div>
+                  <span className="step-label">{st.label}</span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       ) : (
         <div className={`layout-grid ${history.length > 0 ? 'layout-grid-has-sidebar' : ''}`}>
@@ -85,18 +116,43 @@ export function App() {
               <>
                 <TopicOverview topic={currentTopic} />
 
+                {/* Step 1: Raw Sources Discovery */}
+                <RawSourceSection
+                  sources={currentTopic.rawSources}
+                  activeSourceId={activeSourceId}
+                  onHoverSource={setActiveSourceId}
+                  onSelectSource={scrollToSource}
+                />
+
+                {/* Step 2: Split-Screen Deep Arguments */}
                 <div className="perspective-split">
-                  {proPerspective && <PerspectiveColumn perspective={proPerspective} />}
-                  {conPerspective && <PerspectiveColumn perspective={conPerspective} />}
+                  {proPerspective && (
+                    <PerspectiveColumn
+                      perspective={proPerspective}
+                      rawSources={currentTopic.rawSources}
+                      activeSourceId={activeSourceId}
+                      onHoverSource={setActiveSourceId}
+                      onSelectSource={scrollToSource}
+                    />
+                  )}
+                  {conPerspective && (
+                    <PerspectiveColumn
+                      perspective={conPerspective}
+                      rawSources={currentTopic.rawSources}
+                      activeSourceId={activeSourceId}
+                      onHoverSource={setActiveSourceId}
+                      onSelectSource={scrollToSource}
+                    />
+                  )}
                 </div>
               </>
             ) : (
               <div className="glass-card" style={{ textAlign: 'center', padding: '4rem 1.5rem' }}>
                 <h3 style={{ fontSize: '1.4rem', fontWeight: 700, marginBottom: '0.5rem' }}>
-                  Tìm kiếm & Nghiên cứu Đa chiều với Gemini AI
+                  Hệ thống Nghiên cứu Đa chiều Multi-Agent với Gemini AI
                 </h3>
-                <p style={{ color: 'var(--text-muted)', maxWidth: '540px', margin: '0 auto 1.5rem auto' }}>
-                  Nhấn vào góc trên bên phải để nhập <strong>Google Gemini API Key</strong> của bạn, sau đó tìm kiếm bất kỳ chủ đề tranh cãi nào để xem kết quả phân tích 2 mặt thực tế.
+                <p style={{ color: 'var(--text-muted)', maxWidth: '560px', margin: '0 auto 1.5rem auto' }}>
+                  Nhập bất kỳ câu hỏi tranh cãi nào để xem kết quả phân tích sâu 4 tầng: <strong>Trích xuất URL nguồn thật</strong>, <strong>Lý do luận điểm đúng</strong>, <strong>Lưu ý bối cảnh</strong> và <strong>Đánh giá thiên kiến nguồn tin</strong>.
                 </p>
                 <button
                   onClick={() => setIsSettingsOpen(true)}

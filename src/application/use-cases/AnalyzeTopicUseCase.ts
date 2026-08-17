@@ -11,14 +11,15 @@ export class AnalyzeTopicUseCase {
     this.sessionRepository = sessionRepository;
   }
 
-  public async execute(query: string): Promise<Topic> {
+  public async execute(query: string, onProgress?: (step: number, stepName: string) => void): Promise<Topic> {
     const trimmedQuery = query.trim();
     if (!trimmedQuery) {
       throw new Error('Search query cannot be empty');
     }
 
-    const topic = await this.analyzer.analyzeTopic(trimmedQuery);
+    const topic = await this.analyzer.analyzeTopic(trimmedQuery, onProgress);
     await this.sessionRepository.saveTopic(topic);
     return topic;
   }
 }
+
