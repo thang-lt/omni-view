@@ -49,7 +49,8 @@ sequenceDiagram
 | `Home` | Toàn bộ application state và rendering |
 | `callGemini` | HTTP request, response parsing và grounding extraction |
 | `runGeminiResearch` | Source Scout tìm 6 nguồn, fan-out Perspective và Source Bias Auditor, fan-in Judge |
-| `parseBiasAudit` | Validate JSON bias audit, chỉ nhận URL thuộc grounding packet và bổ sung trạng thái chưa đủ dữ kiện |
+| `parseBiasAudit` | Validate JSON bias audit, ánh xạ `sourceIndex` vào grounding packet và bổ sung trạng thái chưa đủ dữ kiện |
+| `normalizeAgentMarkdown` | Bóc Markdown khỏi JSON hoàn chỉnh, code fence hoặc response bị cắt giữa chừng |
 | `Meter` | Progress/confidence primitive |
 | `worker/index.ts` | Vinext routing và image optimization |
 | `layout.tsx` | Metadata theo incoming host |
@@ -64,8 +65,9 @@ tab: report | sources | log
 apiKey, keyDraft, settingsOpen
 geminiResult, geminiError
 logs
-history: tối đa 5 ResearchHistoryItem
+history: tối đa 5 ResearchHistoryItem, mỗi item có tối đa 20 log
 historyReady: chặn ghi trước khi hydrate xong
+logsRef: snapshot đồng bộ để lưu đúng log khi run hoàn tất
 ```
 
 Live request hiện không có `AbortController` hoặc cancel.
@@ -107,7 +109,7 @@ Khi chuyển sang production, Gemini client nên nằm server-side hoặc trong 
 - Fan-out hai worker phân tích trên cùng source packet để giảm chi phí và vẫn giữ kiểm định đối kháng.
 - Judge không search lại để chỉ phân xử evidence packet đã thu thập.
 - Grounding links lấy từ metadata thay vì tin URL do model viết trong text.
-- Source Bias Auditor dùng structured JSON, không search thêm; bias note chỉ được gắn vào URL đã có trong grounding metadata.
+- Source Bias Auditor dùng structured JSON, không search thêm; output tham chiếu số thứ tự nguồn để tránh lặp URL redirect dài và giảm nguy cơ hết token.
 - Không có fallback source/claim: thiếu key hoặc API lỗi dẫn đến empty/error state.
 - Markdown được render bằng `react-markdown` + GFM; HTML thô bị bỏ qua.
 - Phiên hoàn tất được validate, cắt còn năm record và lưu client-side; API key vẫn chỉ ở `sessionStorage`.

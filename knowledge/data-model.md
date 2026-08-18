@@ -33,10 +33,11 @@ type ResearchHistoryItem = {
   topic: string;
   completedAt: string;
   result: GeminiResearch;
+  logs: string[];
 };
 ```
 
-`ResearchHistoryItem[]` được lưu tại `localStorage` key `research-desk:runs:v1`, theo thứ tự mới nhất trước và tối đa năm phần tử. Khi hydrate, app loại record sai shape, ngày không hợp lệ và citation URL không phải `http/https`.
+`ResearchHistoryItem[]` được lưu tại `localStorage` key `research-desk:runs:v1`, theo thứ tự mới nhất trước và tối đa năm phần tử. Mỗi phiên giữ tối đa 20 dòng nhật ký điều phối. Khi hydrate, app loại record sai shape, ngày không hợp lệ, log không phải chuỗi và citation URL không phải `http/https`.
 
 ## 2. Hạn chế model hiện tại
 

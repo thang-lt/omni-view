@@ -79,10 +79,11 @@ Cho phép người dùng nhập một sự kiện, chủ đề hoặc tuyên b�
 
 ### FR-07 — Lịch sử cục bộ
 
-- Tự động lưu topic, thời điểm hoàn tất, báo cáo, output agents, model và tối đa ba URL grounding của mỗi phiên hoàn tất.
+- Tự động lưu topic, thời điểm hoàn tất, báo cáo, output agents, model, tối đa sáu URL grounding và 20 dòng nhật ký điều phối của mỗi phiên hoàn tất.
 - Chỉ giữ năm phiên gần nhất trong `localStorage`; phiên cũ nhất bị loại khi phiên thứ sáu hoàn tất.
 - Validate dữ liệu hydrate và chỉ chấp nhận citation URL dùng giao thức `http` hoặc `https`.
 - Cho phép mở lại báo cáo đã lưu sau khi refresh.
+- Khi mở một phiên đã lưu, khôi phục đúng nhật ký của phiên đó; phiên cũ chưa có log phải hiển thị thông báo tương thích.
 - Không lưu Gemini API key trong record lịch sử.
 
 ## 6. Non-functional requirements

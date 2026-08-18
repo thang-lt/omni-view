@@ -7,7 +7,7 @@ Model: gemini-3.5-flash-lite
 Endpoint: POST /v1beta/models/{model}:generateContent
 Authentication: x-goog-api-key
 Calls per run: 1 grounded scout + 2 analysis workers + 1 judge
-Max output: 900 token/worker và 1400 token/Judge
+Max output: 900 token/worker thường, 1300 token/Bias Auditor và 1400 token/Judge
 Thinking level: minimal
 Giới hạn hiện tại: tối đa 6 URL grounding đa chiều cho toàn phiên
 ```
@@ -65,6 +65,8 @@ tranh, nêu thesis, evidence, assumption, stakeholder, omission và counterargum
 
 Kiểm định cùng source packet mà không search thêm; tìm claim, phản chứng, lỗi
 nhân quả, selection bias, conflict of interest, framing chính trị và fallacy.
+Output dùng structured JSON. Mỗi bias note tham chiếu `sourceIndex` thay vì lặp
+URL redirect dài; app ánh xạ index trở lại URL grounding đã được phép.
 
 ### Evidence Judge
 
@@ -78,7 +80,9 @@ Tổng hợp ba output thành báo cáo có điều biết chắc/có khả năn
 - URL từ `candidates[0].groundingMetadata.groundingChunks[*].web.uri`.
 - Title từ `web.title`, fallback sang hostname.
 
-URL được khử trùng lặp bằng `Map<url, citation>` và cắt còn tối đa ba URL.
+URL được khử trùng lặp bằng `Map<url, citation>` và cắt còn tối đa sáu URL.
+Nếu JSON Bias Auditor bị cắt, formatter vẫn trích riêng chuỗi
+`analysisMarkdown` đã hoàn tất để tránh hiển thị JSON thô.
 
 ## 5. Error taxonomy
 
@@ -98,7 +102,7 @@ URL được khử trùng lặp bằng `Map<url, citation>` và cắt còn tối
 - Không retry/backoff.
 - Không cancel request.
 - Không stream output.
-- Không có structured output schema.
+- Structured output mới áp dụng cho Bias Auditor; các worker khác và Judge vẫn trả text.
 - Judge chỉ thấy text worker, không thấy grounding support spans.
 - URL grounding có thể là redirect URL của Google.
 - Không map citation vào claim/câu cụ thể.
@@ -109,7 +113,7 @@ URL được khử trùng lặp bằng `Map<url, citation>` và cắt còn tối
 1. Thêm `AbortController` và cancel.
 2. Dùng `Promise.allSettled` để giữ partial result.
 3. Retry có jitter cho 429/5xx.
-4. Yêu cầu structured JSON output cho worker và Judge.
+4. Mở rộng structured JSON output sang các worker còn lại và Judge.
 5. Lưu grounding supports để tạo citation theo câu.
 6. Tách prompt templates khỏi UI.
 7. Chuyển API call sang server gateway nếu triển khai cho nhiều người dùng.

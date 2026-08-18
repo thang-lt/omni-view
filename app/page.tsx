@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { isRecord, normalizeAgentMarkdown, parseJsonEnvelope } from "../lib/research-format";
 
 type Tab = "report" | "sources" | "log";
 type RunStatus = "idle" | "running" | "complete";
@@ -11,7 +12,7 @@ type GeminiCitation = { title: string; url: string };
 type GeminiAgentOutput = { name: string; role: string; text: string; citations: GeminiCitation[] };
 type SourceBiasNote = { url: string; signals: string[]; note: string; confidence: "Cao" | "Vừa" | "Thấp"; verificationHint: string };
 type GeminiResearch = { report: string; citations: GeminiCitation[]; agents: GeminiAgentOutput[]; sourceBiasNotes: SourceBiasNote[]; model: string };
-type ResearchHistoryItem = { id: string; topic: string; completedAt: string; result: GeminiResearch };
+type ResearchHistoryItem = { id: string; topic: string; completedAt: string; result: GeminiResearch; logs: string[] };
 
 const GEMINI_MODEL = "gemini-3.5-flash-lite";
 const MAX_LIVE_SOURCES = 6;
@@ -80,10 +81,6 @@ function uniqueCitations(items: GeminiCitation[]) {
   return Array.from(new Map(items.map((item) => [item.url, item])).values());
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
 function parseCitation(value: unknown): GeminiCitation | null {
   if (!isRecord(value) || typeof value.title !== "string" || typeof value.url !== "string") return null;
   try {
@@ -103,51 +100,6 @@ function fallbackBiasNote(citation: GeminiCitation): SourceBiasNote {
     confidence: "Thấp",
     verificationHint: "Kiểm tra tác giả, chủ sở hữu, tài trợ, phương pháp và cách chọn dữ liệu trên trang gốc.",
   };
-}
-
-function parseJsonEnvelope(text: string): Record<string, unknown> | null {
-  const trimmed = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-  const candidates = [trimmed];
-  const objectStart = trimmed.indexOf("{");
-  const objectEnd = trimmed.lastIndexOf("}");
-  if (objectStart >= 0 && objectEnd > objectStart) candidates.push(trimmed.slice(objectStart, objectEnd + 1));
-  for (const candidate of candidates) {
-    try {
-      const parsed: unknown = JSON.parse(candidate);
-      if (isRecord(parsed)) return parsed;
-    } catch { /* try the next JSON envelope */ }
-  }
-  return null;
-}
-
-function extractJsonStringField(text: string, field: string): string | null {
-  const marker = new RegExp(`"${field}"\\s*:\\s*"`).exec(text);
-  if (!marker) return null;
-  const start = marker.index + marker[0].length;
-  let escaped = false;
-  for (let index = start; index < text.length; index += 1) {
-    const character = text[index];
-    if (character === '"' && !escaped) {
-      const rawValue = text.slice(start, index);
-      try { return JSON.parse(`"${rawValue}"`) as string; }
-      catch { return rawValue.replace(/\\n/g, "\n").replace(/\\t/g, "\t").replace(/\\"/g, '"'); }
-    }
-    escaped = character === "\\" ? !escaped : false;
-  }
-  return null;
-}
-
-function normalizeAgentMarkdown(text: string): string {
-  const envelope = parseJsonEnvelope(text);
-  const extractedMarkdown = extractJsonStringField(text, "analysisMarkdown");
-  const source = envelope && typeof envelope.analysisMarkdown === "string" ? envelope.analysisMarkdown : extractedMarkdown || text;
-  let normalized = source.trim();
-  const fencedMarkdown = normalized.match(/^```(?:markdown|md)?\s*([\s\S]*?)\s*```$/i);
-  if (fencedMarkdown) normalized = fencedMarkdown[1].trim();
-  if (!normalized.includes("\n") && normalized.includes("\\n")) {
-    normalized = normalized.replace(/\\n/g, "\n").replace(/\\t/g, "\t");
-  }
-  return normalized;
 }
 
 function parseBiasAudit(text: string, citations: GeminiCitation[]) {
@@ -211,7 +163,8 @@ function parseResearchHistory(raw: string | null): ResearchHistoryItem[] {
       if (!isRecord(item) || typeof item.id !== "string" || typeof item.topic !== "string" || typeof item.completedAt !== "string") return [];
       if (!Number.isFinite(Date.parse(item.completedAt))) return [];
       const result = parseResearch(item.result);
-      return result ? [{ id: item.id, topic: item.topic, completedAt: item.completedAt, result }] : [];
+      const logs = Array.isArray(item.logs) ? item.logs.filter((log): log is string => typeof log === "string").slice(0, 20) : [];
+      return result ? [{ id: item.id, topic: item.topic, completedAt: item.completedAt, result, logs }] : [];
     }).slice(0, MAX_HISTORY_RUNS);
   } catch {
     return [];
@@ -252,8 +205,19 @@ export default function Home() {
   const [geminiError, setGeminiError] = useState("");
   const [history, setHistory] = useState<ResearchHistoryItem[]>([]);
   const [historyReady, setHistoryReady] = useState(false);
+  const logsRef = useRef<string[]>([]);
 
   const progress = status === "complete" ? 100 : Math.max(0, Math.round(((phase + 0.35) / waves.length) * 100));
+
+  function replaceLogs(nextLogs: string[]) {
+    const limitedLogs = nextLogs.slice(0, 20);
+    logsRef.current = limitedLogs;
+    setLogs(limitedLogs);
+  }
+
+  function prependLogs(...entries: string[]) {
+    replaceLogs([...entries, ...logsRef.current]);
+  }
 
   useEffect(() => {
     try {
@@ -298,7 +262,7 @@ export default function Home() {
     setTab("log");
     setGeminiResult(null);
     setGeminiError("");
-    setLogs([`Orchestrator · Tạo Research Brief live cho “${clean}”`]);
+    replaceLogs([`Orchestrator · Tạo Research Brief live cho “${clean}”`]);
 
     const shared = `
 Chủ đề nghiên cứu: “${clean}”.
@@ -308,7 +272,7 @@ Quy tắc bắt buộc: chỉ Source Scout dùng Google Search; ưu tiên nguồ
 
     try {
       setPhase(1);
-      setLogs((old) => [`Source Scout · Đang tìm tối đa ${MAX_LIVE_SOURCES} nguồn với Google Search grounding`, ...old]);
+      prependLogs(`Source Scout · Đang tìm tối đa ${MAX_LIVE_SOURCES} nguồn với Google Search grounding`);
       const scoutTask = {
         name: "Source Scout",
         role: "Tìm nguồn & provenance",
@@ -317,10 +281,10 @@ Quy tắc bắt buộc: chỉ Source Scout dùng Google Search; ưu tiên nguồ
       const scoutResponse = await callGemini(apiKey, scoutTask.prompt, true);
       const citations = uniqueCitations(scoutResponse.citations).slice(0, MAX_LIVE_SOURCES);
       if (citations.length === 0) throw new Error("Gemini không trả về URL grounding. Phiên đã dừng và không tạo báo cáo fallback.");
-      setLogs((old) => [`Source Scout · Chốt ${citations.length}/${MAX_LIVE_SOURCES} nguồn grounding`, ...old].slice(0, 20));
+      prependLogs(`Source Scout · Chốt ${citations.length}/${MAX_LIVE_SOURCES} nguồn grounding`);
 
       setPhase(3);
-      setLogs((old) => ["Perspective Analyst + Red Team · Phân tích cùng gói nguồn, không search thêm", ...old]);
+      prependLogs("Perspective Analyst + Red Team · Phân tích cùng gói nguồn, không search thêm");
       const sourcePacket = `BÁO CÁO SOURCE SCOUT:\n${scoutResponse.text.slice(0, 6000)}\n\nCÁC URL ĐƯỢC GIỮ LẠI:\n${citations.map((item, index) => `${index + 1}. ${item.title}: ${item.url}`).join("\n")}`;
       const perspectiveTask = {
         name: "Perspective Analyst",
@@ -337,7 +301,7 @@ Quy tắc bắt buộc: chỉ Source Scout dùng Google Search; ưu tiên nguồ
         callGemini(apiKey, biasTask.prompt, false, BIAS_MAX_OUTPUT_TOKENS, SOURCE_BIAS_SCHEMA),
       ]);
       const biasAudit = parseBiasAudit(biasResponse.text, citations);
-      setLogs((old) => [`Red Team & Bias Auditor · Gắn lưu ý bias cho ${biasAudit.sourceBiasNotes.length} nguồn`, `Perspective Analyst · Hoàn tất phân tích gói ${citations.length} nguồn`, ...old].slice(0, 20));
+      prependLogs(`Red Team & Bias Auditor · Gắn lưu ý bias cho ${biasAudit.sourceBiasNotes.length} nguồn`, `Perspective Analyst · Hoàn tất phân tích gói ${citations.length} nguồn`);
       const analysisResponses = [
         { ...perspectiveTask, text: perspectiveResponse.text, citations },
         { ...biasTask, text: biasAudit.analysisMarkdown, citations },
@@ -345,7 +309,7 @@ Quy tắc bắt buộc: chỉ Source Scout dùng Google Search; ưu tiên nguồ
       const agentResponses = [{ ...scoutTask, text: scoutResponse.text, citations }, ...analysisResponses];
 
       setPhase(5);
-      setLogs((old) => ["Evidence Judge · Đang đối chiếu ba báo cáo độc lập", ...old]);
+      prependLogs("Evidence Judge · Đang đối chiếu ba báo cáo độc lập");
       const evidencePacket = agentResponses.map((agent) => `\n### ${agent.name}\n${agent.text.slice(0, 6000)}`).join("\n");
       const judgePrompt = `${shared}
 Bạn là Evidence Judge độc lập. Dưới đây là ba báo cáo worker. Hãy tổng hợp thành báo cáo cuối có cấu trúc Markdown:
@@ -363,21 +327,23 @@ EVIDENCE PACKET:
 ${evidencePacket}`;
       const judged = await callGemini(apiKey, judgePrompt, false, JUDGE_MAX_OUTPUT_TOKENS);
       const completedResult = { report: judged.text, citations, agents: agentResponses.map(({ name, role, text, citations: agentCitations }) => ({ name, role, text, citations: agentCitations })), sourceBiasNotes: biasAudit.sourceBiasNotes, model: GEMINI_MODEL };
+      const completedLogs = [`Citation Auditor · Giữ lại ${citations.length} URL grounding độc nhất`, "Evidence Judge · Hoàn tất tổng hợp có điều kiện", ...logsRef.current].slice(0, 20);
       setGeminiResult(completedResult);
       setHistory((current) => [{
         id: globalThis.crypto?.randomUUID?.() || `${Date.now()}`,
         topic: clean,
         completedAt: new Date().toISOString(),
         result: completedResult,
+        logs: completedLogs,
       }, ...current].slice(0, MAX_HISTORY_RUNS));
       setPhase(6);
       setStatus("complete");
       setTab("report");
-      setLogs((old) => [`Citation Auditor · Giữ lại ${citations.length} URL grounding độc nhất`, "Evidence Judge · Hoàn tất tổng hợp có điều kiện", ...old]);
+      replaceLogs(completedLogs);
     } catch (error) {
       setStatus("idle");
       setGeminiError(error instanceof Error ? error.message : "Không thể hoàn tất nghiên cứu Gemini.");
-      setLogs((old) => ["Orchestrator · Phiên live dừng vì lỗi kết nối hoặc API", ...old]);
+      prependLogs("Orchestrator · Phiên live dừng vì lỗi kết nối hoặc API");
     }
   }
 
@@ -400,7 +366,7 @@ ${evidencePacket}`;
     setGeminiResult(null);
     setStatus("idle");
     setPhase(-1);
-    setLogs([]);
+    replaceLogs([]);
     setGeminiError("");
     setSettingsOpen(false);
   }
@@ -412,7 +378,7 @@ ${evidencePacket}`;
     setPhase(6);
     setTab("report");
     setGeminiError("");
-    setLogs([`Lịch sử · Đã mở phiên hoàn tất lúc ${new Date(item.completedAt).toLocaleString("vi-VN")}`]);
+    replaceLogs(item.logs.length > 0 ? item.logs : [`Lịch sử · Phiên này được lưu trước khi tính năng lưu nhật ký được bổ sung (${new Date(item.completedAt).toLocaleString("vi-VN")})`]);
   }
 
   return (
@@ -489,7 +455,7 @@ ${evidencePacket}`;
             {history.length > 0 ? <div className="history-list">{history.map((item) => <button key={item.id} className="history-item" onClick={() => openHistoryItem(item)}>
               <b>{item.topic}</b>
               <span>{new Date(item.completedAt).toLocaleString("vi-VN")}</span>
-              <small>{item.result.citations.length} nguồn · {item.result.model}</small>
+              <small>{item.result.citations.length} nguồn · {item.logs.length} nhật ký · {item.result.model}</small>
             </button>)}</div> : <div className="history-empty"><span className="inspect-orbit">◎</span><b>Chưa có phiên hoàn tất</b><p>Mỗi báo cáo live hoàn tất sẽ tự động xuất hiện tại đây và được giữ lại sau khi refresh.</p></div>}
           </div>
         </aside>
