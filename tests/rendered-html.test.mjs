@@ -13,11 +13,15 @@ test("renders the research desk", async () => {
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /Đa Chiều — Multi-Agent Research Desk/);
-  assert.match(html, /Demo mô phỏng/);
+  assert.match(html, /Live only/);
   assert.match(html, /Bắt đầu/);
   assert.match(html, /Đội nghiên cứu/);
+  assert.match(html, /Lịch sử nghiên cứu/);
+  assert.match(html, /Tối đa 6 nguồn đa chiều/);
+  assert.match(html, /Bias audit theo nguồn/);
   assert.match(html, /Kết nối Gemini/);
-  assert.match(html, /Demo mô phỏng/);
+  assert.match(html, /Không dữ liệu mẫu/);
+  assert.doesNotMatch(html, /Demo mô phỏng|nguồn demo|C-0[1-9]|10 nguồn/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
   assert.doesNotMatch(html, /AIza[A-Za-z0-9_-]{20,}/);
 });
