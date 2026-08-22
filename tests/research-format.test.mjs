@@ -14,3 +14,11 @@ test("unwraps complete structured output and markdown fences", () => {
   const complete = JSON.stringify({ analysisMarkdown: "```markdown\n## Bias của pipeline\n\n- Selection bias.\n```", sourceBiasNotes: [] });
   assert.equal(normalizeAgentMarkdown(complete), "## Bias của pipeline\n\n- Selection bias.");
 });
+
+test("repairs escaped line breaks and compact heading syntax in a report", () => {
+  const malformed = "```markdown\n#Kết luận\\n\\n##Điều biết chắc\\n\\n- Dữ kiện đã kiểm tra.\n```";
+  assert.equal(
+    normalizeAgentMarkdown(malformed),
+    "# Kết luận\n\n## Điều biết chắc\n\n- Dữ kiện đã kiểm tra.",
+  );
+});

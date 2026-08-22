@@ -1,141 +1,95 @@
 # Data Model
 
-## 1. Model hiện có trong code
+## 1. Domain contracts đã triển khai
 
-### Gemini result
+`domain/research` định nghĩa và validate các immutable record:
 
-```ts
-type GeminiCitation = { title: string; url: string };
-type GeminiAgentOutput = {
-  name: string;
-  role: string;
-  text: string;
-  citations: GeminiCitation[];
-};
-type GeminiResearch = {
-  report: string;
-  citations: GeminiCitation[];
-  agents: GeminiAgentOutput[];
-  sourceBiasNotes: SourceBiasNote[];
-  model: string;
-};
+- `SourceRecord`: canonical URL, publisher/authors, type, stakeholder, ownership/funding, upstream IDs, family và full-text status.
+- `EvidenceRecord`: source ID, quote, locator, surrounding context, extraction time và content hash.
+- `ClaimRecord`: claim type, evidence hỗ trợ/phản chứng, assumptions, verdict và confidence reason.
+- `WarningRecord`: target, taxonomy, observable indicator, evidence IDs, alternative explanation, severity, confidence và review status.
+- `CoverageReport`: 7 requirements, nhóm đã có/thiếu, ratio và complete flag.
 
-type SourceBiasNote = {
-  url: string;
-  signals: string[];
-  note: string;
-  confidence: "Cao" | "Vừa" | "Thấp";
-  verificationHint: string;
-};
+Factory bắt buộc HTTP(S), cấm source tự tham chiếu upstream, cấm một evidence vừa support vừa contradict, yêu cầu evidence cho verdict supported/unsupported và yêu cầu warning có evidence.
 
-type ResearchHistoryItem = {
-  id: string;
-  topic: string;
-  completedAt: string;
-  result: GeminiResearch;
-  logs: string[];
-};
-```
+## 2. Live application artifacts
 
-`ResearchHistoryItem[]` được lưu tại `localStorage` key `research-desk:runs:v1`, theo thứ tự mới nhất trước và tối đa năm phần tử. Mỗi phiên giữ tối đa 20 dòng nhật ký điều phối. Khi hydrate, app loại record sai shape, ngày không hợp lệ, log không phải chuỗi và citation URL không phải `http/https`.
-
-## 2. Hạn chế model hiện tại
-
-- Live output chủ yếu là text không cấu trúc.
-- Citation chưa có locator hoặc quan hệ với claim.
-- Phiên cục bộ có ID và thời điểm hoàn tất, nhưng chưa có thời điểm bắt đầu hoặc version prompt.
-- Không lưu truy vấn grounding.
-- Không biểu diễn source family thật.
-- Không lưu dissent hoặc update trigger ở dạng máy đọc được.
-
-## 3. Schema mục tiêu
-
-### ResearchRun
+Live UI dùng các artifact gần với domain nhưng chưa đồng nhất hoàn toàn:
 
 ```ts
-type ResearchRun = {
+type ExtractedSourcePacket = {
   id: string;
-  topic: string;
-  status: "draft" | "running" | "paused" | "complete" | "failed";
-  mode: "gemini-live";
-  model: string | null;
-  promptVersion: string;
-  startedAt: string;
-  completedAt: string | null;
-  scope: ResearchScope;
-  logs: AgentLog[];
-};
-```
-
-### SourceRecord
-
-```ts
-type SourceRecord = {
-  id: string;
-  runId: string;
-  canonicalUrl: string;
   title: string;
-  publisher: string | null;
-  author: string[];
-  publishedAt: string | null;
-  accessedAt: string;
-  language: string | null;
-  sourceType: string;
-  stakeholderGroups: string[];
-  evidenceFamilyId: string | null;
-  upstreamSourceIds: string[];
+  url: string;
+  excerpt: string;
+  locator: string; // hiện là "server-extracted excerpt" hoặc "metadata-only"
   fullTextStatus: "read" | "partial" | "metadata-only" | "inaccessible";
-  ownershipFundingNotes: string[];
 };
-```
 
-### ClaimRecord
-
-```ts
-type ClaimRecord = {
-  id: string;
-  runId: string;
-  normalizedText: string;
-  originalQuote: string | null;
-  type: "empirical" | "causal" | "predictive" | "interpretive" | "normative";
-  sourceIds: string[];
-  supportingEvidenceIds: string[];
-  contradictingEvidenceIds: string[];
-  assumptions: string[];
-  verdict: string;
-  confidence: "high" | "medium" | "low" | "indeterminate";
+type SourceWarningArtifact = {
+  category: WarningCategory;
+  observableIndicator: string;
+  evidenceQuote: string;
+  evidenceVerified: boolean;
+  alternativeExplanation: string | null;
+  severity: "info" | "low" | "medium" | "high";
+  confidence: "low" | "medium" | "high";
   confidenceReason: string;
+  verificationHint: string;
+  reviewStatus: "machine-only";
+};
+
+type ClaimArtifact = {
+  id: string;
+  text: string;
+  type: "empirical" | "causal" | "predictive" | "interpretive" | "normative";
+  verdict: "supported" | "mixed" | "unsupported" | "unresolved";
+  confidence: "low" | "medium" | "high";
+  citations: Array<{
+    sourceId: string;
+    locator: string; // source locator + character offset trong excerpt
+    quote: string;
+    evidenceVerified: true;
+  }>;
+  contradictingSourceIds: string[];
   unresolvedQuestions: string[];
 };
 ```
 
-### AuditRecord
+Warning artifact giữ `evidenceQuote`; quote chỉ được xác minh nếu dài tối thiểu 20 ký tự và là exact substring của excerpt. Claim citation cũng yêu cầu exact substring nhưng chỉ cần quote không rỗng. Coverage tags được lọc qua allowlist 7 giá trị, tối đa 4 tag/nguồn và bị xóa với nguồn không `read`/`partial`.
 
-```ts
-type AuditRecord = {
-  id: string;
-  targetType: "source" | "claim" | "report";
-  targetId: string;
-  auditType: "factuality" | "bias" | "political-framing" | "logic" | "citation";
-  finding: string;
-  observableIndicator: string;
-  severity: "info" | "low" | "medium" | "high";
-  evidenceIds: string[];
-  alternativeExplanation: string | null;
-  confidence: number;
-};
-```
+Local `GeminiResearch` còn lưu report, tối đa 8 citations, agent outputs, heuristic source clusters, audit status, coverage, claims, citation audit và model. History nằm tại `localStorage` key `research-desk:runs:v2`, tối đa 5 record và 20 log/record.
 
-## 4. Persistence
+## 3. D1 schema và migration
 
-Hiện tại lịch sử chỉ nằm trong browser; `db/schema.ts` trống và D1 chưa được khai báo. Nếu cần đồng bộ lịch sử qua thiết bị, schema đầu tiên nên gồm:
+`db/schema.ts` và `drizzle/0000_demonic_terrax.sql` đã có:
 
-- `research_runs`.
-- `sources`.
-- `evidence_families`.
-- `claims`.
-- `claim_evidence`.
-- `audits`.
-- `agent_logs`.
+- `research_runs`
+- `evidence_families`
+- `sources`
+- `evidence`
+- `claims`
+- `claim_evidence`
+- `warnings`
+- `agent_logs`
 
-Không lưu Gemini API key vào database.
+Schema có foreign keys, cascade policy, unique/indexes và JSON text fields cho arrays/metadata. Migration metadata cũng đã được tạo.
+
+## 4. Persistence status
+
+Schema không đồng nghĩa persistence đã hoạt động:
+
+- Pipeline chưa gọi repository hoặc ghi các table.
+- History thực tế vẫn ở browser.
+- `.openai/hosting.json` đặt `d1: null`; không có binding production từ file này.
+- `db/index.ts` chỉ cung cấp accessor và sẽ báo lỗi nếu thiếu binding.
+- Chưa có migration deployment verification hoặc data migration từ local history.
+
+Không được lưu Gemini API key vào D1.
+
+## 5. Khoảng cách model còn lại
+
+- Live claim evidence có character offset trong excerpt, nhưng chưa có paragraph/page/timestamp locator ổn định hoặc durable content hash.
+- Warning evidence link trong UI được suy ra từ excerpt, chưa có Evidence row runtime.
+- Source ownership, funding và upstream metadata chưa được tự động enrich.
+- Chưa lưu prompt version, search query, token usage hoặc raw grounding support spans trong run.

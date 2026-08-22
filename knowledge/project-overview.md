@@ -2,79 +2,51 @@
 
 ## 1. Mục tiêu
 
-Đa Chiều Research Desk là prototype web hỗ trợ nghiên cứu một chủ đề theo quy trình đa tác nhân:
+Đa Chiều Research Desk là prototype nghiên cứu sự kiện và luận điểm có tranh chấp. Hệ thống tìm nguồn theo hai chiến lược, đọc phần nội dung có thể truy cập, phân tích các quan điểm cạnh tranh, tạo cảnh báo nguồn có evidence và tổng hợp claim có điều kiện.
 
-1. Tìm nguồn đa dạng.
-2. Phân nhóm nguồn và theo dõi provenance.
-3. Phân tích quan điểm, luận điểm và giả định.
-4. Tìm phản chứng, bias, framing chính trị và lỗi lập luận.
-5. Tổng hợp kết luận có điều kiện, kèm nguồn grounding.
-
-Ứng dụng không tuyên bố “AI xác định sự thật”. Kết quả là hỗ trợ nghiên cứu và phải được người dùng kiểm tra lại ở nguồn gốc.
+Ứng dụng không tuyên bố AI xác định sự thật hoặc tự động xác định khuynh hướng chính trị. Warning là tín hiệu cần kiểm tra; warning confidence không phải điểm uy tín của nguồn.
 
 ## 2. Trạng thái hiện tại
 
-| Khả năng | Trạng thái | Ghi chú |
+| Khả năng | Trạng thái | Giới hạn quan trọng |
 |---|---|---|
-| Giao diện Research Desk | Đã có | Một route, responsive, bố cục ba vùng |
-| Live-only pipeline 7 wave | Đã có | Chỉ chạy khi có Gemini API key; không fallback dữ liệu mẫu |
-| Gemini BYOK | Đã có | Key lưu trong `sessionStorage` |
-| Google Search grounding | Đã có | Source Scout tìm tối đa 6 nguồn đa chiều; hai worker còn lại dùng chung source packet |
-| Source bias audit | Đã có | Ghi tín hiệu, confidence và cách kiểm tra riêng cho từng URL; bias không đồng nghĩa sai |
-| Evidence Judge | Đã có | Request Gemini thứ tư, không dùng search |
-| Danh sách URL grounding | Đã có | Khử trùng lặp theo URL |
-| Claim-level citation mapping | Chưa có | URL chưa gắn chính xác vào từng câu báo cáo |
-| Source family/provenance graph thật | Chưa có | Mới nằm trong prompt và thiết kế mục tiêu |
-| Persistence lịch sử nghiên cứu | Đã có | `localStorage` giữ tối đa 5 phiên hoàn tất; API key không nằm trong lịch sử |
-| Server-side secret proxy | Chưa có | API call hiện chạy trực tiếp từ browser |
-| D1/R2 | Chưa bật | `.openai/hosting.json` để `null` |
-| Production deployment | Chưa có | Sites chưa được bật cho workspace tại lần thử gần nhất |
+| Research Desk responsive | Đã có | Một route chính, lịch sử cục bộ tối đa 5 phiên |
+| Hai Source Scout | Đã có | Balanced Scout và Counter-evidence Scout search song song, tối đa 8 URL sau dedupe URL chính xác |
+| Gemini same-origin gateway | Đã có | Validate body/prompt/schema/token, timeout và retry tối đa 3 lần cho 429/5xx; browser vẫn gửi BYOK cho từng request |
+| Server source extraction | Đã có | Không có public arbitrary-fetch route; gateway chỉ extract tối đa 8 URL lấy từ Gemini grounding metadata |
+| Source family service | Đã có | Heuristic cluster theo canonical URL, fingerprint trùng chính xác và upstream ID rõ ràng; chưa có fuzzy similarity/ownership graph |
+| Structured source audit | Đã có | Warning quote tối thiểu 20 ký tự phải khớp excerpt; quote đã xác minh được hiển thị; status vẫn `machine-only` |
+| Coverage gate | Đã có | Chỉ nhận 7 tag allowlist từ nguồn `read`/`partial`, tối đa 4 tag/nguồn; phân loại vẫn phụ thuộc model |
+| Structured Claim Ledger | Đã có | Citation chỉ hợp lệ khi `evidenceQuote` khớp chính xác excerpt và có character locator |
+| Citation audit | Một phần | Kiểm tra quote/source/locator ở mức exact substring; chưa chứng minh semantic entailment hoặc đầy đủ ngữ cảnh |
+| DDD domain model | Đã có | Factory/invariant thuần cho source, evidence, claim, warning và coverage |
+| D1 schema + migration | Đã có thiết kế | Chưa nối persistence vào pipeline; `.openai/hosting.json` vẫn có `d1: null` |
+| Live Gemini E2E | Chưa xác nhận | Không chạy được nếu không có API key hợp lệ và quota/search access |
 
-## 3. Công nghệ
+## 3. Công nghệ và cấu trúc
 
-- React 19 + TypeScript.
-- Vinext trên Vite.
-- Cloudflare Vite plugin và Worker-compatible output.
-- Tailwind được import nhưng phần lớn giao diện dùng CSS thuần.
-- Gemini REST `generateContent`.
-- Model hiện tại: `gemini-3.5-flash-lite`, thinking `minimal`.
-- Drizzle ORM đã cài nhưng schema dự án đang trống.
-
-## 4. Cấu trúc source
+- React 19, TypeScript, Vinext/Vite và Cloudflare-compatible output.
+- Gemini REST model `gemini-3.5-flash-lite`, thinking `minimal`.
+- Drizzle ORM + SQLite/D1 schema và migration đầu tiên.
 
 ```text
-BI2/
-├── app/
-│   ├── page.tsx              # UI, state và Gemini orchestration
-│   ├── globals.css           # Toàn bộ visual system và responsive
-│   ├── layout.tsx            # Metadata và root HTML
-│   └── chatgpt-auth.ts       # Helper auth có sẵn, hiện chưa dùng
-├── worker/index.ts           # Cloudflare Worker entry
-├── db/
-│   ├── index.ts              # D1/Drizzle accessor
-│   └── schema.ts             # Hiện chưa có table
-├── tests/
-│   └── rendered-html.test.mjs
-├── public/
-│   └── og.png                # Social preview
-├── work/
-│   └── MULTI_AGENT_RESEARCH_DESIGN.md
-├── knowledge/                # Tài liệu dự án
-├── .openai/hosting.json
-├── vite.config.ts
-├── package.json
-└── README.md
+app/
+  page.tsx                         # browser orchestration và UI
+  api/research/gemini/route.ts     # Gemini gateway + grounded-URL extraction
+application/research/
+  run-live-research.ts             # use case và ports cho pipeline live
+  pipeline-artifacts.ts            # parse structured audit/claim artifacts
+  source-intelligence.ts           # family, coverage, citation services
+domain/research/                    # entities, value contracts, invariants
+infrastructure/
+  gemini/request.ts                # gateway request validation
+  source/extraction.ts             # bounded fetch/extract + URL safety
+components/research-artifacts.tsx  # Coverage, Claim Ledger, Warning panels
+db/schema.ts                       # D1 schema; runtime chưa ghi dữ liệu
+drizzle/0000_demonic_terrax.sql    # migration đầu tiên
+tests/                              # domain/application/infrastructure/SSR tests
 ```
 
-## 5. Các điểm tập trung kỹ thuật
+## 4. Ranh giới hiện tại
 
-`app/page.tsx` hiện chứa nhiều trách nhiệm:
-
-- Type definitions.
-- Gemini API client.
-- Prompt templates.
-- Multi-agent orchestration.
-- State persistence.
-- UI rendering.
-
-Đây là lựa chọn phù hợp cho prototype nhưng là điểm cần tách đầu tiên khi mở rộng.
+`runLiveResearch` đã tách orchestration thành application use case với ports cho Gemini, extraction mapping, phase và log. `app/page.tsx` vẫn giữ adapter HTTP, state và local history. Chưa có durable repository, background job, cancellation toàn run hoặc partial-result recovery.

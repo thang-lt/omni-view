@@ -2,116 +2,86 @@
 
 ## 1. Product statement
 
-Cho phép người dùng nhập một sự kiện, chủ đề hoặc tuyên bố; hệ thống thu thập thông tin đa chiều, làm rõ các narrative cạnh tranh, kiểm tra claim và trình bày mức độ bất định có thể truy nguyên.
+Cho phép người dùng nhập một sự kiện hoặc luận điểm; hệ thống tìm nguồn và phản chứng, đọc excerpt có giới hạn, trình bày coverage, claim, warning nguồn và mức bất định có thể kiểm tra lại.
 
-## 2. Người dùng mục tiêu
+## 2. Job to be done
 
-- Nhà phân tích và researcher.
-- Nhà báo hoặc fact-checker.
-- Nhóm policy, strategy và risk.
-- Người dùng cần hiểu một tranh luận phức tạp trước khi ra quyết định.
+> Khi thông tin xung đột và các bên có thể có lợi ích hoặc định kiến, tôi muốn biết claim nào dựa vào nguồn nào, góc nhìn nào còn thiếu và warning nào chỉ do máy phát hiện.
 
-## 3. Job to be done
+## 3. User flow hiện tại
 
-> Khi gặp một chủ đề có nhiều thông tin xung đột, tôi muốn nhìn thấy nguồn gốc, luận điểm, phản chứng và bias để hiểu điều gì đã biết, điều gì còn tranh chấp và điều gì chưa thể kết luận.
+1. Kết nối Gemini BYOK.
+2. Nhập topic từ 8–180 ký tự và bắt đầu phiên live.
+3. Hai Scout chạy Google Search bằng hai chiến lược độc lập về truy vấn.
+4. Với từng Scout response, Gemini gateway chỉ đọc tối đa 8 URL do chính grounding metadata trả về; use case gộp citation và extraction theo URL.
+5. Perspective Analyst đọc toàn bộ evidence packet; Source Warning Auditor đọc theo lô tối đa 4 nguồn để tránh JSON coverage bị cắt, sau đó validator hợp nhất kết quả.
+6. Evidence Judge trả báo cáo và Claim Ledger có cấu trúc.
+7. UI hiển thị Coverage Matrix, report, claims, source families, read status và warning.
+8. Phiên hoàn tất được lưu cục bộ; có thể mở lại một trong 5 phiên gần nhất.
 
-## 4. User flow hiện tại
+## 4. Functional requirements đã triển khai
 
-1. Mở ứng dụng.
-2. Kết nối Gemini API key.
-3. Nhập chủ đề tối thiểu 8 ký tự.
-4. Bấm **Bắt đầu**.
-5. Theo dõi pipeline và nhật ký.
-6. Xem báo cáo, output từng worker và danh sách URL grounding.
-7. Mở lại một trong năm phiên hoàn tất gần nhất từ **Lịch sử nghiên cứu**.
-8. In báo cáo bằng chức năng browser.
+### FR-01 — Live-only và BYOK
 
-## 5. Functional requirements
+- Không tạo dữ liệu mẫu hoặc báo cáo fallback.
+- Key nằm trong `sessionStorage`, không nằm trong history.
+- Browser gửi key qua header tới same-origin gateway; gateway forward tới Gemini và không persistence key.
 
-### FR-01 — Research input
+### FR-02 — Multi-query source discovery
 
-- Nhận một topic từ 8–180 ký tự.
-- Không thực thi HTML từ input.
-- Lưu topic gần nhất trong `localStorage`.
+- Balanced Source Scout ưu tiên nguồn sơ cấp, dữ liệu và phương pháp.
+- Counter-evidence Scout chủ động tìm phản chứng, tổ chức bị phê phán, nhóm chịu tác động và chuyên gia không cùng lợi ích.
+- Mỗi Scout không biết output của Scout kia tại thời điểm search.
+- Gộp và cắt tối đa 8 URL grounding.
 
-### FR-02 — Live-only policy
+### FR-03 — Grounding-scoped server extraction
 
-- Không chạy nghiên cứu khi chưa có API key.
-- Không tạo source, claim, audit hoặc kết luận mẫu.
-- Khi chưa có dữ liệu thật, hiển thị empty state và yêu cầu kết nối Gemini.
+- Không còn public `/api/sources/extract`; client không thể gửi một URL tùy ý tới một proxy đọc nguồn.
+- Gateway tự lấy URL từ `groundingMetadata` của Gemini search response rồi mới gọi extractor.
+- Extractor chỉ chấp nhận URL HTTP(S) công khai theo validation hiện có.
+- Manual redirect, kiểm tra lại mỗi redirect, tối đa 3 redirect mặc định.
+- Mỗi grounded source có timeout 12 giây, tối đa 512 KB; gateway yêu cầu tối đa 3.000 ký tự excerpt.
+- Script/style/template/SVG bị loại khỏi HTML text.
+- Content không hỗ trợ như PDF được đánh dấu `metadata-only`; lỗi là `inaccessible`.
 
-### FR-03 — Gemini connection
+### FR-04 — Structured research artifacts
 
-- Nhận key bằng input `password`.
-- Chỉ lưu trong `sessionStorage`.
-- Cho phép hiện/ẩn và xóa key.
-- Không đưa key vào log, URL, source hoặc báo cáo.
+- Source audit gồm source type, stance, stakeholder groups, coverage tags và warnings.
+- Evidence quote của warning phải dài tối thiểu 20 ký tự và khớp exact substring không phân biệt hoa thường; nếu không thì severity bị hạ xuống `info`, confidence `low`. Quote đã xác minh được hiển thị trong Warning Panel.
+- Claim citation chỉ được tạo từ `evidenceQuote` khớp exact substring trong source excerpt; locator gồm locator nguồn và character offset.
+- Coverage gate kiểm tra 7 nhóm allowlist: primary, claimant, counterparty, affected, independent expert, local và counterevidence. Nguồn `metadata-only`/`inaccessible` không được đóng góp coverage; mỗi nguồn tối đa 4 tag.
+- Evidence packet được JSON encode bên trong vùng dữ liệu không đáng tin để source text không phá cấu trúc packet bằng delimiter giả.
 
-### FR-04 — Live multi-agent research
+### FR-05 — Trust communication
 
-- Chạy ba worker theo hai wave:
-  - Source Scout.
-  - Perspective Analyst.
-  - Red Team & Bias Auditor.
-- Source Scout sử dụng Google Search grounding và giữ tối đa sáu nguồn.
-- Khi dữ liệu cho phép, sáu nguồn phải bao phủ nguồn sơ cấp, báo chí độc lập, học thuật/phương pháp, bên ủng hộ, bên phản biện/chịu tác động và góc nhìn địa phương/chuyên gia.
-- Không dùng bài đăng lại cùng provenance để lấp đủ số lượng.
-- Perspective Analyst và Red Team dùng chung source packet, không search thêm.
-- Evidence Judge tổng hợp output của ba worker.
-- Không đếm số agent đồng ý như bằng chứng.
+- UI ghi rõ warning confidence không phải source reliability.
+- Warning hiện tại luôn là `machine-only`; chưa có human review workflow.
+- Quan điểm chính trị khác không tự động đồng nghĩa sai, thù ghét hoặc disinformation.
+- Read status và coverage gap được hiển thị.
 
-### FR-05 — Live results
+### FR-06 — Local history
 
-- Hiển thị báo cáo tổng hợp.
-- Cho phép mở output từng worker.
-- Hiển thị danh sách URL từ grounding metadata.
-- Khử trùng lặp URL.
-- Báo lỗi API bằng thông điệp có thể hành động.
-- Với từng grounding URL, hiển thị lưu ý bias tiềm ẩn gồm tín hiệu quan sát được, confidence và cách kiểm tra chéo.
-- Khi chưa đủ căn cứ, ghi rõ chưa đủ dữ kiện thay vì ép gán nhãn bias.
+- Lưu tối đa 5 phiên tại `research-desk:runs:v2`, tối đa 20 log mỗi phiên.
+- Validate URL HTTP(S) và shape cơ bản khi hydrate.
+- D1 chưa được dùng cho history hoặc research run.
 
-### FR-06 — Trust communication
+## 5. Out of scope/chưa hoàn tất
 
-- Ghi rõ hệ thống chỉ sử dụng dữ liệu live từ phiên Gemini hiện tại.
-- Nêu rõ confidence không phải xác suất đúng tuyệt đối.
-- Nêu rõ bias không đồng nghĩa nguồn sai.
-- Yêu cầu kiểm tra nguồn gốc trước quyết định quan trọng.
+- Locator ngữ nghĩa theo paragraph/page/timestamp và snapshot/hash bền vững; character offset hiện chỉ nằm trong excerpt.
+- Kiểm tra citation có thực sự entail claim và quote có đủ ngữ cảnh.
+- Fuzzy copy detection, wire-service discovery, ownership/funding lookup tự động.
+- Cancel toàn run, streaming và partial-run recovery. Gateway đã retry 429/5xx nhưng application use case vẫn fail nếu một call song song thất bại.
+- User account, sharing, server history và human review.
+- Phân tích PDF/media và DNS-resolution SSRF defense.
 
-### FR-07 — Lịch sử cục bộ
+## 6. Acceptance criteria hiện tại
 
-- Tự động lưu topic, thời điểm hoàn tất, báo cáo, output agents, model, tối đa sáu URL grounding và 20 dòng nhật ký điều phối của mỗi phiên hoàn tất.
-- Chỉ giữ năm phiên gần nhất trong `localStorage`; phiên cũ nhất bị loại khi phiên thứ sáu hoàn tất.
-- Validate dữ liệu hydrate và chỉ chấp nhận citation URL dùng giao thức `http` hoặc `https`.
-- Cho phép mở lại báo cáo đã lưu sau khi refresh.
-- Khi mở một phiên đã lưu, khôi phục đúng nhật ký của phiên đó; phiên cũ chưa có log phải hiển thị thông báo tương thích.
-- Không lưu Gemini API key trong record lịch sử.
-
-## 6. Non-functional requirements
-
-- Responsive từ 375px trở lên.
-- Keyboard-accessible cho control chính.
-- Hỗ trợ `prefers-reduced-motion`.
-- Không render API key vào SSR HTML.
-- Build được thành Cloudflare Worker-compatible ESM.
-- Không để lỗi một nguồn biến thành kết luận giả.
-
-## 7. Out of scope hiện tại
-
-- User account và chia sẻ workspace.
-- Lưu nhiều research run trên server.
-- Upload hoặc phân tích tài liệu riêng.
-- Claim-level citation chính xác.
-- Background job, queue và retry bền vững.
-- Billing, quota management hoặc API key vault.
-- Human approval workflow.
-
-## 8. Acceptance criteria cho phiên bản hiện tại
-
-- SSR trả HTTP 200 và hiển thị tên sản phẩm, CTA và nút kết nối Gemini.
-- Source không chứa API key thật.
-- Không có publisher, source, claim hoặc kết luận mẫu trong SSR/source.
-- Live mode gọi đúng model `gemini-3.5-flash-lite` với thinking `minimal`.
-- Chỉ Source Scout bật `google_search`; Judge và hai worker phân tích không bật search.
-- Grounding URLs được hiển thị bằng link ngoài an toàn.
-- Tối đa năm phiên hoàn tất được khôi phục từ `localStorage`; dữ liệu hỏng không làm ứng dụng crash.
-- Build và rendered HTML test đều pass.
+- Hai Scout là hai request có search; Analyst, Auditor và Judge không search.
+- Không có grounding URL thì run dừng.
+- Mỗi nguồn có read status và audit có thể là incomplete.
+- Warning không có quote khớp excerpt phải bị downgrade.
+- Claim có quote không khớp excerpt bị coi là thiếu evidence và phải được Citation Auditor công khai.
+- Coverage thiếu nhóm không được hiển thị như coverage hoàn chỉnh.
+- SSR không chứa API key hoặc dữ liệu nghiên cứu mẫu.
+- Unit/integration/SSR tests pass trên Node đáp ứng `>=22.13.0`.
+- Live Gemini E2E chỉ được coi là xác nhận khi chạy với key/quota thật; hiện chưa có xác nhận đó.

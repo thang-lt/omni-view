@@ -1,115 +1,87 @@
 # System Design
 
-## 1. Kiến trúc hiện tại
+## 1. Kiến trúc đang chạy
 
 ```mermaid
 flowchart LR
-    U["Browser user"] --> UI["React Research Desk"]
-    UI --> LS["localStorage: topic + 5 completed runs"]
-    UI --> SS["sessionStorage: Gemini key"]
-    UI -->|"x-goog-api-key"| G["Gemini generateContent API"]
+    U["Browser user"] --> O["React orchestrator"]
+    O --> LS["localStorage: 5 runs"]
+    O --> SS["sessionStorage: BYOK"]
+    O --> GW["POST /api/research/gemini"]
+    GW --> G["Gemini generateContent"]
     G --> GS["Google Search grounding"]
-    UI --> W["Vinext / Cloudflare Worker shell"]
+    GW -->|"chỉ URL từ grounding metadata"| EX["Internal bounded extractor"]
+    EX --> WEB["Grounded public HTTP(S) sources"]
+    O --> AP["Application artifact services"]
+    AP --> UI["Coverage / Claims / Warnings"]
+    D1["D1 schema + migration"] -. "chưa nối runtime" .-> O
 ```
 
-Ứng dụng là client-heavy. Worker phục vụ app và image optimization; Gemini call không đi qua Worker.
+Gateway cùng origin nhận BYOK cho từng request, validate body/prompt/token/schema rồi forward sang Gemini. Với search response thành công, chính gateway lấy tối đa 8 URL duy nhất từ grounding metadata và extract; không còn API đọc URL tùy ý từ browser. Gateway không phải secret vault: key vẫn bắt đầu ở browser và đi qua gateway process.
 
-## 2. Live-only execution
+## 2. Pipeline live
 
 ```mermaid
 sequenceDiagram
-    participant U as User
     participant O as Browser Orchestrator
-    participant S as Source Scout
-    participant P as Perspective Analyst
-    participant R as Red Team/Auditor
-    participant J as Evidence Judge
-    participant G as Gemini API
+    participant G as Gemini Gateway
+    participant E as Source Extractor
 
-    U->>O: Topic + session API key
-    O->>G: Source Scout + google_search
-    G-->>S: Text + tối đa 6 grounding URLs đa chiều
-    par Analysis workers, no search
-        O->>G: Perspective Analyst + shared source packet
-        G-->>P: Perspective analysis
+    par Independent search prompts
+      O->>G: Balanced Scout + google_search
     and
-        O->>G: Red Team + shared source packet
-        G-->>R: Bias/fallacy audit
+      O->>G: Counter-evidence Scout + google_search
     end
-    O->>G: Evidence packet, no search
-    G-->>J: Synthesized report
-    O->>O: Dedupe grounding URLs
-    O-->>U: Report + worker outputs + links
+    O->>O: Exact URL dedupe, cap 8
+    G->>E: Grounding URLs only
+    E-->>O: Extractions đi kèm Scout response
+    O->>O: Canonical URL/exact fingerprint source families
+    par No-search analysis
+      O->>G: Perspective Analyst + evidence packet
+    and
+      O->>G: Source Warning Auditor + JSON schema
+    end
+    O->>O: Verify warning quote ≥20 chars; readable-only coverage
+    O->>G: Evidence Judge + JSON schema, no search
+    O->>O: Exact quote match + character locator + citation status
 ```
 
-## 3. Runtime components
+## 3. Layer responsibilities
 
-| Component | Trách nhiệm hiện tại |
-|---|---|
-| `Home` | Toàn bộ application state và rendering |
-| `callGemini` | HTTP request, response parsing và grounding extraction |
-| `runGeminiResearch` | Source Scout tìm 6 nguồn, fan-out Perspective và Source Bias Auditor, fan-in Judge |
-| `parseBiasAudit` | Validate JSON bias audit, ánh xạ `sourceIndex` vào grounding packet và bổ sung trạng thái chưa đủ dữ kiện |
-| `normalizeAgentMarkdown` | Bóc Markdown khỏi JSON hoàn chỉnh, code fence hoặc response bị cắt giữa chừng |
-| `Meter` | Progress/confidence primitive |
-| `worker/index.ts` | Vinext routing và image optimization |
-| `layout.tsx` | Metadata theo incoming host |
+| Layer | Thành phần | Trách nhiệm |
+|---|---|---|
+| Domain | `domain/research/*` | Immutable contracts, factories và invariant cho source/evidence/claim/warning/coverage |
+| Application | `run-live-research.ts` | Live use case; điều phối 5 operation qua ports, family/coverage/audit/Judge và completion logs |
+| Application | `pipeline-artifacts.ts` | Evidence packet, parse và downgrade audit, parse Judge claims |
+| Application | `source-intelligence.ts` | URL canonicalization, source families, coverage và citation completeness |
+| Infrastructure | `source/extraction.ts` | Bounded fetch, redirect validation, readable-text extraction |
+| Infrastructure | `gemini/request.ts` | Validate gateway request và token bounds |
+| Delivery | Gemini API route | Same-origin proxy, retry/bounds và extraction chỉ từ grounded URLs |
+| Presentation | `page.tsx`, components | Port adapters, local state/history và artifact rendering |
+| Persistence | `db/schema.ts`, migration | Schema sẵn có nhưng chưa có repository/use case ghi D1 |
 
-## 4. State model
+## 4. Source-family semantics
 
-```text
-topic, activeTopic
-status: idle | running | complete
-phase: -1..6
-tab: report | sources | log
-apiKey, keyDraft, settingsOpen
-geminiResult, geminiError
-logs
-history: tối đa 5 ResearchHistoryItem, mỗi item có tối đa 20 log
-historyReady: chặn ghi trước khi hydrate xong
-logsRef: snapshot đồng bộ để lưu đúng log khi run hoàn tất
-```
+Pure service tạo heuristic cluster khi có ít nhất một quan hệ sau:
 
-Live request hiện không có `AbortController` hoặc cancel.
+- canonical URL giống nhau;
+- `contentFingerprint` giống hệt;
+- `upstreamSourceIds` chỉ rõ quan hệ.
 
-## 5. Target modular architecture
+Live runtime đưa tối đa 3.000 ký tự mỗi nguồn vào evidence packet, tạo fingerprint từ 1.200 ký tự đầu của excerpt sau normalize và chưa trích/populate upstream ID. Vì vậy cluster chỉ là chỉ báo sơ bộ, chưa phải provenance graph, semantic similarity, wire-copy hay ownership detection.
 
-```text
-app/
-  page.tsx
-components/
-  research-composer.tsx
-  pipeline-rail.tsx
-  result-tabs.tsx
-  source-explorer.tsx
-  claim-ledger.tsx
-  evidence-inspector.tsx
-  gemini-key-dialog.tsx
-lib/
-  gemini/client.ts
-  gemini/prompts.ts
-  research/orchestrator.ts
-  research/models.ts
-  storage/session.ts
-```
+Evidence packet là một JSON object được `JSON.stringify` và đặt trong `<UNTRUSTED_SOURCE_DATA_JSON>`. Cách này giữ source text ở trường dữ liệu thay vì ghép delimiter tự do, nhưng không tự loại bỏ indirect prompt injection.
 
-Khi chuyển sang production, Gemini client nên nằm server-side hoặc trong một gateway riêng, có rate limiting, audit log và secret isolation.
+## 5. Failure behavior
 
-## 6. Failure behavior hiện tại
+- Hai Scout và hai analysis worker dùng `Promise.all`; một request lỗi sau retry làm run dừng.
+- Mỗi source extraction có fallback `inaccessible`, nên một nguồn không đọc được không tự làm mất cả run.
+- Không grounding URL: dừng, không tạo báo cáo giả.
+- Gateway retry 429/5xx tối đa 3 attempt với exponential delay + jitter; mỗi Gemini attempt timeout 30 giây.
+- Gateway giới hạn request body theo `Content-Length` 80 KB, prompt 50.000 ký tự, response schema 20.000 ký tự và output 200–3.000 tokens.
+- Chưa streaming, cancel toàn use case hoặc partial-result policy. Extractor có AbortController nội bộ cho timeout từng source fetch.
+- Storage lỗi bị bỏ qua; D1 chưa tham gia runtime.
 
-- HTTP không thành công: đọc `error.message` từ Gemini.
-- JSON lỗi: fallback object rỗng.
-- Response không có text: hiển thị lỗi safety/topic.
-- Một worker lỗi: `Promise.all` làm toàn run thất bại.
-- Grounding không có URL: dừng phiên và không tạo báo cáo fallback.
-- Storage hỏng/quota: bỏ qua và tiếp tục.
+## 6. Giới hạn truy nguyên
 
-## 7. Các quyết định kiến trúc
-
-- Fan-out hai worker phân tích trên cùng source packet để giảm chi phí và vẫn giữ kiểm định đối kháng.
-- Judge không search lại để chỉ phân xử evidence packet đã thu thập.
-- Grounding links lấy từ metadata thay vì tin URL do model viết trong text.
-- Source Bias Auditor dùng structured JSON, không search thêm; output tham chiếu số thứ tự nguồn để tránh lặp URL redirect dài và giảm nguy cơ hết token.
-- Không có fallback source/claim: thiếu key hoặc API lỗi dẫn đến empty/error state.
-- Markdown được render bằng `react-markdown` + GFM; HTML thô bị bỏ qua.
-- Phiên hoàn tất được validate, cắt còn năm record và lưu client-side; API key vẫn chỉ ở `sessionStorage`.
+Judge phải trả `evidenceQuotes`. Parser chỉ tạo citation khi quote không rỗng và là exact substring không phân biệt hoa thường trong excerpt tương ứng; locator thêm character offset. Điều này mạnh hơn chỉ kiểm tra source index, nhưng character offset thuộc excerpt chứ không phải vị trí bền vững trong tài liệu gốc và chưa kiểm định semantic support/context omission.

@@ -41,8 +41,13 @@ export function normalizeAgentMarkdown(text: string): string {
   let normalized = source.trim();
   const fencedMarkdown = normalized.match(/^```(?:markdown|md)?\s*([\s\S]*?)\s*```$/i);
   if (fencedMarkdown) normalized = fencedMarkdown[1].trim();
-  if (!normalized.includes("\n") && normalized.includes("\\n")) {
-    normalized = normalized.replace(/\\n/g, "\n").replace(/\\t/g, "\t");
+  if (normalized.includes("\\n") || normalized.includes("\\r") || normalized.includes("\\t")) {
+    normalized = normalized.replace(/\\r\\n|\\n|\\r/g, "\n").replace(/\\t/g, "\t");
   }
-  return normalized;
+  return normalized
+    .replace(/^(#{1,6})([^\s#])/gm, "$1 $2")
+    .replace(/^([-+*])(?=\S)/gm, "$1 ")
+    .replace(/^(\d+[.)])(?=\S)/gm, "$1 ")
+    .replace(/^>(?=\S)/gm, "> ")
+    .trim();
 }

@@ -1,59 +1,63 @@
 # Roadmap
 
-## P0 — Độ tin cậy của prototype
+## Đã hoàn thành trong prototype
 
-- Tách Gemini client, prompts và orchestrator khỏi `page.tsx`.
-- Thêm `AbortController` cho live run.
-- Dùng `Promise.allSettled` và partial-result policy.
-- Retry có backoff cho 429/5xx.
-- Gắn prompt version và model vào run metadata.
-- Thêm mock integration tests cho Gemini.
+- Hai Source Scout có chiến lược truy vấn khác nhau; tối đa 8 URL.
+- Same-origin Gemini gateway có body/prompt/schema/token bounds, timeout và retry cho 429/5xx.
+- Public arbitrary source proxy đã được loại bỏ; gateway chỉ extract URL từ grounding metadata, với giới hạn redirect/timeout/bytes/content type.
+- `runLiveResearch` use case và ports đã tách khỏi React page.
+- JSON-encoded untrusted source packet.
+- Structured source audit: warning quote tối thiểu 20 ký tự, verification/downgrade, quote display và `machine-only` status.
+- Structured Claim Ledger với exact evidence quote, character locator, Coverage Matrix allowlisted/readable-only và citation gap status.
+- Pure domain model/factories theo bounded context `research`.
+- Source-family service theo canonical URL, exact fingerprint và explicit upstream IDs.
+- D1 schema, indexes và migration đầu tiên.
 
-## P1 — Structured research artifacts
+## P0 — Hoàn thiện độ bền runtime
 
-- Yêu cầu worker trả structured JSON.
-- Tạo Source Registry thật.
-- Tạo Claim Ledger thật.
-- Lưu evidence locator và grounding supports.
-- Map citation vào từng claim/câu báo cáo.
-- Dựng evidence-family/provenance graph.
-- Tính coverage gaps từ dữ liệu thay vì từ prose.
+- `AbortController` cho cả run và nút cancel.
+- `Promise.allSettled` và partial-result policy; mở rộng retry policy ngoài Gemini gateway khi cần.
+- Prompt version, model revision, search query, token/cost và trace ID.
+- Mock integration test toàn flow qua API routes.
 
-## P2 — Persistence và collaboration
+## P1 — Truy nguyên evidence chính xác
 
-- Thiết kế D1 schema.
-- Lưu research run, source, claim, audit và log.
-- Lịch sử run và so sánh phiên bản.
-- Export JSON/Markdown/PDF.
-- Share/read-only link.
-- Human review và override record.
+- Paragraph/page/timestamp locator bền vững thay cho character offset trong excerpt.
+- Snapshot/content hash bền vững và grounding support spans.
+- Citation auditor kiểm tra semantic support, context và phản chứng bị bỏ qua.
+- Evidence rows thật liên kết claim/warning; dùng domain factories trong live use case.
+- PDF/document extraction an toàn.
 
-## P3 — Production security
+## P2 — Provenance và research quality
 
-- Chuyển Gemini call sang server-side gateway.
-- Secret vault hoặc per-user encrypted credentials.
-- Rate limit, quota và abuse control.
-- Audit log không chứa secret.
-- Content-size limit và prompt-injection isolation.
-- CSP và security headers.
-
-## P4 — Research quality
-
-- Language/geography-aware query planner.
-- Dedicated primary-source verification wave.
-- Local-source and minority-voice coverage gate.
-- Political framing multi-axis rubric.
-- Calibration dataset cho confidence.
-- Citation completeness auditor độc lập.
+- Trích upstream link/byline/publisher/ownership/funding metadata.
+- Near-duplicate/fuzzy similarity và wire-copy detection; không gộp chỉ vì cùng publisher.
+- Query planner đa ngôn ngữ/địa lý và dedicated primary-source verifier.
+- Benchmark bias/framing/hate false positives và confidence calibration.
 - Scheduled re-check cho claim thay đổi theo thời gian.
+
+## P3 — Durable persistence
+
+- Viết repository cho D1 schema hiện có và nối vào use case.
+- Cấu hình binding thật thay cho `.openai/hosting.json` `d1: null`.
+- Apply/verify migration trên staging, retention và data migration policy.
+- Server history, compare runs, export và read-only sharing.
+- Human review/override record cho warnings.
+
+## P4 — Production security/operations
+
+- Bỏ BYOK khỏi browser mặc định: identity + secret vault/encrypted credentials.
+- Rate limit, quota, abuse/cost controls và durable audit logs không chứa secret.
+- DNS resolution/private-IP enforcement hoặc isolated egress fetcher; rate limit gateway/extraction để tiếp tục harden sau khi đã bỏ public proxy.
+- CSP/security headers và prompt-injection regression suite.
+- Observability, alerts và SLO cho gateway/extractor/pipeline.
 
 ## Definition of production-ready
 
-- Mọi claim trọng yếu truy về evidence locator.
-- Các URL cùng upstream origin không bị đếm là độc lập.
-- Một worker lỗi không làm mất toàn bộ run.
-- Không có API key ở browser storage mặc định.
-- Có durable state, observability và cost controls.
-- Có regression tests cho prompt/schema/model migration.
-- Báo cáo giữ uncertainty, dissent và source limitations.
-
+- Mọi material claim truy tới locator chính xác và semantic citation audit.
+- URL cùng upstream/copy không bị tính là độc lập.
+- Một worker hoặc source lỗi không làm mất toàn run.
+- API key không nằm trong browser storage mặc định.
+- D1 binding, repository và migration được kiểm thử thật.
+- Có human-review path cho warning quan trọng.
+- Có live provider E2E, security tests và regression benchmark.
