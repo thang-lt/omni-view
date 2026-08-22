@@ -6,7 +6,7 @@ export type ExtractedSourcePacket = {
   url: string;
   excerpt: string;
   locator: string;
-  fullTextStatus: "read" | "partial" | "metadata-only" | "inaccessible";
+  fullTextStatus: "read" | "partial" | "grounded-support" | "metadata-only" | "inaccessible";
 };
 
 export type WarningCategory =
@@ -45,12 +45,39 @@ export type SourceAuditArtifact = {
   warnings: SourceWarningArtifact[];
 };
 
+export type SourceProviderRegistryEntry = {
+  id: string;
+  name: string;
+  domain: string;
+  sourceIds: string[];
+  discoveredBy: Array<"balanced-scout" | "counter-scout">;
+};
+
+export type ProviderAssessmentArtifact = {
+  providerId: string;
+  providerName: string;
+  reputationAssessment: "established" | "mixed" | "limited-evidence" | "unknown";
+  politicalOrientation: string;
+  ownershipAndAffiliations: string[];
+  reputationSignals: string[];
+  caveats: string[];
+  verificationCitations: Array<{ title: string; url: string }>;
+  reviewStatus: "machine-only";
+};
+
+export type SourceAuditParseContext = {
+  providers?: readonly SourceProviderRegistryEntry[];
+  verificationCitations?: readonly { title: string; url: string }[];
+};
+
 export type ParsedSourceAuditArtifact = {
   analysisMarkdown: string;
   sourceAudits: SourceAuditArtifact[];
+  providerAssessments: ProviderAssessmentArtifact[];
   status: "complete" | "incomplete";
   missingSourceIndexes: number[];
   duplicateSourceIndexes: number[];
+  missingProviderIds: string[];
 };
 
 export type ClaimArtifact = {
@@ -75,6 +102,7 @@ const SEVERITIES = new Set(["info", "low", "medium", "high"]);
 const CLAIM_TYPES = new Set(["empirical", "causal", "predictive", "interpretive", "normative"]);
 const CLAIM_VERDICTS = new Set(["supported", "mixed", "unsupported", "unresolved"]);
 const COVERAGE_TAGS = new Set(["primary", "claimant", "counterparty", "affected", "independent_expert", "local", "counterevidence"]);
+const REPUTATION_ASSESSMENTS = new Set(["established", "mixed", "limited-evidence", "unknown"]);
 
 function strings(value: unknown, limit = 12): string[] {
   if (!Array.isArray(value)) return [];
@@ -122,13 +150,21 @@ export function buildEvidencePacket(sources: ExtractedSourcePacket[], sourceInde
 export function mergeSourceAuditArtifacts(
   artifacts: readonly ParsedSourceAuditArtifact[],
   sources: readonly ExtractedSourcePacket[],
+  providers: readonly SourceProviderRegistryEntry[] = [],
 ): ParsedSourceAuditArtifact {
   const counts = new Map<number, number>();
   const byIndex = new Map<number, SourceAuditArtifact>();
+  const assessmentByProvider = new Map<string, ProviderAssessmentArtifact>();
   for (const artifact of artifacts) {
     for (const audit of artifact.sourceAudits) {
       counts.set(audit.sourceIndex, (counts.get(audit.sourceIndex) || 0) + 1);
       if (sources[audit.sourceIndex - 1] && !byIndex.has(audit.sourceIndex)) byIndex.set(audit.sourceIndex, audit);
+    }
+    for (const assessment of artifact.providerAssessments) {
+      const current = assessmentByProvider.get(assessment.providerId);
+      if (!current || assessment.reputationSignals.length + assessment.verificationCitations.length > current.reputationSignals.length + current.verificationCitations.length) {
+        assessmentByProvider.set(assessment.providerId, assessment);
+      }
     }
   }
   const expected = sources.map((_, index) => index + 1);
@@ -137,12 +173,15 @@ export function mergeSourceAuditArtifacts(
     .filter(([, count]) => count > 1)
     .map(([index]) => index)
     .sort((left, right) => left - right);
+  const missingProviderIds = providers.map((provider) => provider.id).filter((providerId) => !assessmentByProvider.has(providerId));
   return {
     analysisMarkdown: artifacts.map((artifact) => artifact.analysisMarkdown.trim()).filter(Boolean).join("\n\n---\n\n"),
     sourceAudits: Array.from(byIndex.values()).sort((left, right) => left.sourceIndex - right.sourceIndex),
-    status: missingSourceIndexes.length === 0 && duplicateSourceIndexes.length === 0 ? "complete" : "incomplete",
+    providerAssessments: Array.from(assessmentByProvider.values()),
+    status: missingSourceIndexes.length === 0 && duplicateSourceIndexes.length === 0 && missingProviderIds.length === 0 ? "complete" : "incomplete",
     missingSourceIndexes,
     duplicateSourceIndexes,
+    missingProviderIds,
   };
 }
 
@@ -171,7 +210,7 @@ function parseWarning(value: unknown, source: ExtractedSourcePacket): SourceWarn
   };
 }
 
-export function parseSourceAuditArtifact(raw: string, sources: ExtractedSourcePacket[]): ParsedSourceAuditArtifact {
+export function parseSourceAuditArtifact(raw: string, sources: ExtractedSourcePacket[], context: SourceAuditParseContext = {}): ParsedSourceAuditArtifact {
   const parsed = parseJsonEnvelope(raw);
   const rawAudits = parsed && Array.isArray(parsed.sourceAudits) ? parsed.sourceAudits : [];
   const counts = new Map<number, number>();
@@ -192,7 +231,7 @@ export function parseSourceAuditArtifact(raw: string, sources: ExtractedSourcePa
       sourceType: text(item.sourceType, "unknown"),
       stance: text(item.stance, "unclear"),
       stakeholderGroups: strings(item.stakeholderGroups),
-      coverageTags: source.fullTextStatus === "read" || source.fullTextStatus === "partial"
+      coverageTags: source.fullTextStatus === "read" || source.fullTextStatus === "partial" || source.fullTextStatus === "grounded-support"
         ? strings(item.coverageTags).filter((tag) => COVERAGE_TAGS.has(tag)).slice(0, 4)
         : [],
       warnings,
@@ -202,12 +241,35 @@ export function parseSourceAuditArtifact(raw: string, sources: ExtractedSourcePa
   const expected = sources.map((_, index) => index + 1);
   const missingSourceIndexes = expected.filter((index) => !byIndex.has(index));
   const duplicateSourceIndexes = Array.from(counts.entries()).filter(([, count]) => count > 1).map(([index]) => index).sort((a, b) => a - b);
+  const providerById = new Map((context.providers || []).map((provider) => [provider.id, provider]));
+  const providerAssessments = (parsed && Array.isArray(parsed.providerAssessments) ? parsed.providerAssessments : []).flatMap((item): ProviderAssessmentArtifact[] => {
+    if (!isRecord(item) || typeof item.providerId !== "string") return [];
+    const provider = providerById.get(item.providerId);
+    if (!provider) return [];
+    const reputationAssessment = REPUTATION_ASSESSMENTS.has(item.reputationAssessment as string)
+      ? item.reputationAssessment as ProviderAssessmentArtifact["reputationAssessment"]
+      : "unknown";
+    return [{
+      providerId: provider.id,
+      providerName: provider.name,
+      reputationAssessment,
+      politicalOrientation: text(item.politicalOrientation, "Chưa xác định đủ bằng chứng"),
+      ownershipAndAffiliations: strings(item.ownershipAndAffiliations, 8),
+      reputationSignals: strings(item.reputationSignals, 8),
+      caveats: strings(item.caveats, 8),
+      verificationCitations: Array.from(new Map((context.verificationCitations || []).map((citation) => [citation.url, citation])).values()).slice(0, 8),
+      reviewStatus: "machine-only",
+    }];
+  });
+  const missingProviderIds = Array.from(providerById.keys()).filter((providerId) => !providerAssessments.some((assessment) => assessment.providerId === providerId));
   return {
     analysisMarkdown: normalizeAgentMarkdown(parsed && typeof parsed.analysisMarkdown === "string" ? parsed.analysisMarkdown : raw),
     sourceAudits: Array.from(byIndex.values()).sort((a, b) => a.sourceIndex - b.sourceIndex),
-    status: missingSourceIndexes.length === 0 && duplicateSourceIndexes.length === 0 ? "complete" : "incomplete",
+    providerAssessments,
+    status: missingSourceIndexes.length === 0 && duplicateSourceIndexes.length === 0 && missingProviderIds.length === 0 ? "complete" : "incomplete",
     missingSourceIndexes,
     duplicateSourceIndexes,
+    missingProviderIds,
   };
 }
 
@@ -234,8 +296,11 @@ export function parseJudgeArtifact(raw: string, sources: ExtractedSourcePacket[]
     }];
   });
   const claimIdsWithoutEvidence = claims.filter((claim) => claim.citations.length === 0).map((claim) => claim.id);
+  const reportInput = parsed
+    ? typeof parsed.reportMarkdown === "string" ? parsed.reportMarkdown : ""
+    : raw;
   return {
-    reportMarkdown: normalizeAgentMarkdown(parsed && typeof parsed.reportMarkdown === "string" ? parsed.reportMarkdown : raw),
+    reportMarkdown: normalizeAgentMarkdown(reportInput),
     claims,
     invalidSourceIndexes: Array.from(invalidIndexes).sort((a, b) => a - b),
     citationAudit: {

@@ -21,10 +21,11 @@ Gateway từ chối `Content-Length` trên 80 KB, giới hạn prompt ở 50.000
 | Balanced Source Scout | Có | Text + grounding URLs |
 | Counter-evidence Scout | Có | Text + grounding URLs |
 | Perspective Analyst | Không | Markdown/text có source references |
-| Source Warning Auditor | Không | JSON theo schema, lô tối đa 4 nguồn và tối đa 3.000 tokens/lô |
-| Evidence Judge | Không | JSON report + claims, tối đa 2.600 tokens |
+| Source Warning Auditor | Có, chỉ để kiểm tra provider | JSON theo schema, lô tối đa 4 nguồn và tối đa 3.000 tokens/lô |
+| Evidence Judge · Claim Ledger | Không | JSON 3-6 claims, tối đa 3.000 tokens |
+| Evidence Judge · Report | Không | JSON report Markdown dựa trên Claim Ledger đã parse, tối đa 2.600 tokens |
 
-Hai Scout chạy song song và không nhận output của nhau. Trên từng search response, gateway lấy tối đa 8 URL duy nhất trực tiếp từ grounding metadata và extract nội bộ; route không nhận URL tùy ý từ client. Use case gộp citation/extraction, đưa toàn bộ packet cho Perspective Analyst và chia Source Auditor thành các lô tối đa 4 nguồn. Các audit được validate rồi hợp nhất trước khi tính coverage. Judge nhận packet và hai output phân tích.
+Hai Scout chạy song song và không nhận output của nhau. Trên từng search response, gateway extract toàn bộ URL duy nhất trực tiếp từ grounding metadata theo các nhóm concurrency nhỏ; route không nhận URL tùy ý từ client. Use case sau đó mới gộp và chọn tối đa 8 URL cho tập nghiên cứu cuối. Gateway đồng thời giữ các segment trong `groundingSupports` theo đúng chunk nguồn. Nếu trang nguồn không thể được fetch trực tiếp nhưng support segment tồn tại, packet dùng trạng thái `grounded-support` và locator ghi rõ đây là nội dung model-generated được Google Search liên kết, không phải quote nguyên văn trang nguồn. Use case tạo Provider Registry theo domain và lưu scout nào phát hiện mỗi đơn vị. Perspective Analyst đọc evidence packet không search. Source Warning Auditor chạy hai lượt theo lô tối đa 4 nguồn: Provider Verification search dạng text để kiểm tra ownership/affiliation, editorial orientation và reputation signals; sau đó structured audit không search nhận verification report và evidence packet. Nếu verification search lỗi/rỗng, structured audit vẫn chạy với assessment `unknown`/`limited-evidence`. Các audit được validate rồi hợp nhất trước khi tính coverage. Judge nhận packet, provider assessments và hai output phân tích.
 
 ## 3. Structured source audit
 
@@ -41,9 +42,9 @@ Parser yêu cầu `evidenceQuote` dài tối thiểu 20 ký tự và xuất hi�
 
 ## 4. Structured Judge output
 
-Judge trả `reportMarkdown` và tối đa 12 claims, gồm `evidenceQuotes`. Parser bỏ citation nếu quote không khớp exact substring với excerpt; citation hợp lệ lưu quote, source ID và character offset. Source indexes ngoài packet bị báo; claim không còn citation hợp lệ được ghi vào citation gap.
+Judge chạy hai lượt để báo cáo dài không làm mất mảng claim do giới hạn output: lượt đầu trả 3-6 claims có `evidenceQuotes`, lượt sau viết `reportMarkdown` dựa trên Claim Ledger đã parse. Parser bỏ citation nếu quote không khớp exact substring với excerpt; citation hợp lệ lưu quote, source ID và character offset. Source indexes ngoài packet bị báo; claim không còn citation hợp lệ được ghi vào citation gap. Pipeline dừng với lỗi rõ ràng thay vì lưu một Claim Ledger rỗng.
 
-Character locator xác định vị trí quote trong excerpt đã trích xuất, chưa phải grounding support span hoặc paragraph/page ổn định trong tài liệu gốc.
+Character locator xác định vị trí quote trong excerpt trực tiếp hoặc grounding-support packet. Locator luôn phân biệt hai loại; cả hai đều chưa phải paragraph/page ổn định trong tài liệu gốc, và grounding-support không được trình bày như quote nguyên văn nguồn.
 
 ## 5. Error và giới hạn
 

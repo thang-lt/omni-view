@@ -12,12 +12,14 @@ import {
 import {
   GEMINI_MODEL,
   MAX_LIVE_SOURCES,
+  mapGroundedSources,
   runLiveResearch,
   type GeminiCitation,
   type GeminiAgentOutput,
   type GeminiRequest,
   type GeminiSourceExtraction,
   type SourceIntelligence,
+  type SourceProviderProfile,
   type LiveResearchResult,
 } from "../application/research/run-live-research";
 import { ClaimLedger, CoverageMatrix, SourceAuditNotice, SourceWarningPanel, type CoverageRequirementView } from "../components/research-artifacts";
@@ -31,35 +33,79 @@ type ResearchHistoryItem = { id: string; topic: string; completedAt: string; res
 
 const MAX_HISTORY_RUNS = 5;
 const HISTORY_STORAGE_KEY = "research-desk:runs:v2";
+const GEMINI_DEBUG_LOGS = process.env.NODE_ENV === "development";
+
+function printGeminiDebug(operation: GeminiRequest["operation"], stage: "REQUEST" | "RESPONSE" | "ERROR", value: unknown) {
+  if (!GEMINI_DEBUG_LOGS) return;
+  const label = `[Gemini][${operation}][${stage}]`;
+  if (stage === "ERROR") {
+    console.error(label, value);
+    return;
+  }
+  console.groupCollapsed(label);
+  console.log(value);
+  console.groupEnd();
+}
+
 async function callGemini(apiKey: string, request: GeminiRequest) {
-  const response = await fetch("/api/research/gemini", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-gemini-api-key": apiKey },
-    body: JSON.stringify({
-      prompt: request.prompt,
-      useSearch: request.useSearch,
-      maxOutputTokens: request.maxOutputTokens,
-      ...(request.responseSchema ? { responseSchema: request.responseSchema } : {}),
-    }),
+  printGeminiDebug(request.operation, "REQUEST", {
+    prompt: request.prompt,
+    useSearch: request.useSearch,
+    extractSources: request.extractSources,
+    maxOutputTokens: request.maxOutputTokens,
+    responseSchema: request.responseSchema,
   });
 
-  const payload = await response.json().catch(() => ({})) as {
-    error?: { message?: string };
-    sourceExtractions?: GeminiSourceExtraction[];
-    candidates?: Array<{
-      content?: { parts?: Array<{ text?: string }> };
-      groundingMetadata?: { groundingChunks?: Array<{ web?: { uri?: string; title?: string } }> };
-    }>;
-  };
-  if (!response.ok) throw new Error(payload.error?.message || `Gemini API trả về lỗi ${response.status}`);
-  const candidate = payload.candidates?.[0];
-  const text = candidate?.content?.parts?.map((part) => part.text || "").join("\n").trim();
-  if (!text) throw new Error("Gemini không trả về nội dung. Hãy kiểm tra safety settings hoặc thử chủ đề khác.");
-  const citations = (candidate?.groundingMetadata?.groundingChunks || [])
-    .map((chunk) => chunk.web)
-    .filter((web): web is { uri: string; title?: string } => Boolean(web?.uri))
-    .map((web) => ({ title: web.title || new URL(web.uri).hostname, url: web.uri }));
-  return { text, citations, sourceExtractions: Array.isArray(payload.sourceExtractions) ? payload.sourceExtractions : [] };
+  try {
+    const response = await fetch("/api/research/gemini", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-gemini-api-key": apiKey },
+      body: JSON.stringify({
+        operation: request.operation,
+        prompt: request.prompt,
+        useSearch: request.useSearch,
+        ...(typeof request.extractSources === "boolean" ? { extractSources: request.extractSources } : {}),
+        maxOutputTokens: request.maxOutputTokens,
+        ...(request.responseSchema ? { responseSchema: request.responseSchema } : {}),
+      }),
+    });
+
+    const payload = await response.json().catch(() => ({})) as {
+      error?: { message?: string };
+      promptFeedback?: { blockReason?: string };
+      sourceExtractions?: GeminiSourceExtraction[];
+      candidates?: Array<{
+        content?: { parts?: Array<{ text?: string }> };
+        finishReason?: string;
+        groundingMetadata?: { groundingChunks?: Array<{ web?: { uri?: string; title?: string } }> };
+      }>;
+    };
+    printGeminiDebug(request.operation, "RESPONSE", { httpStatus: response.status, payload });
+    const operationLabel = ({
+      "balanced-scout": "Balanced Source Scout",
+      "counter-scout": "Counter-evidence Scout",
+      perspective: "Perspective Analyst",
+      "provider-verification": "Provider Verification",
+      audit: "Source Warning Auditor",
+      "judge-claims": "Evidence Judge · Claim Ledger",
+      "judge-report": "Evidence Judge · Report",
+    } as Record<GeminiRequest["operation"], string>)[request.operation];
+    if (!response.ok) throw new Error(`${operationLabel}: ${payload.error?.message || `Gemini API trả về lỗi ${response.status}`}`);
+    const candidate = payload.candidates?.[0];
+    const text = candidate?.content?.parts?.map((part) => part.text || "").join("\n").trim();
+    if (!text) {
+      const reason = candidate?.finishReason || payload.promptFeedback?.blockReason;
+      throw new Error(`${operationLabel}: Gemini không trả về nội dung${reason ? ` (${reason})` : ""}.`);
+    }
+    const citations = (candidate?.groundingMetadata?.groundingChunks || [])
+      .map((chunk) => chunk.web)
+      .filter((web): web is { uri: string; title?: string } => Boolean(web?.uri))
+      .map((web) => ({ title: web.title || new URL(web.uri).hostname, url: web.uri }));
+    return { text, citations, sourceExtractions: Array.isArray(payload.sourceExtractions) ? payload.sourceExtractions : [] };
+  } catch (error) {
+    printGeminiDebug(request.operation, "ERROR", error);
+    throw error;
+  }
 }
 
 function parseCitation(value: unknown): GeminiCitation | null {
@@ -78,6 +124,7 @@ const CLAIM_VERDICTS = new Set(["supported", "mixed", "unsupported", "unresolved
 const CONFIDENCE_LEVELS = new Set(["low", "medium", "high"]);
 const WARNING_CATEGORIES = new Set(["conflict-of-interest", "selection-bias", "methodology", "factual-reliability", "misinformation-risk", "propaganda-technique", "hostile-language", "political-framing", "recency", "geographic-scope", "provenance"]);
 const COVERAGE_CATEGORIES = ["primary", "claimant", "counterparty", "affected", "independent_expert", "local", "counterevidence"] as const;
+const REPUTATION_ASSESSMENTS = new Set(["established", "mixed", "limited-evidence", "unknown"]);
 
 function safeStrings(value: unknown, limit = 20): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim()).slice(0, limit) : [];
@@ -103,7 +150,7 @@ function parseStoredWarning(value: unknown, sourceExcerpt: string): SourceWarnin
 function parseStoredAudit(value: unknown, source: ExtractedSourcePacket): SourceAuditArtifact | undefined {
   if (!isRecord(value) || typeof value.sourceId !== "string" || typeof value.sourceIndex !== "number" || !Number.isInteger(value.sourceIndex) || typeof value.sourceType !== "string" || typeof value.stance !== "string" || !Array.isArray(value.warnings)) return undefined;
   const warnings = value.warnings.map((warning) => parseStoredWarning(warning, source.excerpt)).filter((warning): warning is NonNullable<typeof warning> => warning !== null).slice(0, 8);
-  const coverageTags = source.fullTextStatus === "read" || source.fullTextStatus === "partial"
+  const coverageTags = source.fullTextStatus === "read" || source.fullTextStatus === "partial" || source.fullTextStatus === "grounded-support"
     ? safeStrings(value.coverageTags, 7).filter((tag) => COVERAGE_CATEGORIES.includes(tag as typeof COVERAGE_CATEGORIES[number])).slice(0, 4)
     : [];
   return { sourceId: value.sourceId, sourceIndex: value.sourceIndex, sourceType: value.sourceType, stance: value.stance, stakeholderGroups: safeStrings(value.stakeholderGroups, 12), coverageTags, warnings };
@@ -131,6 +178,27 @@ function parseStoredClaim(value: unknown, sources: Map<string, SourceIntelligenc
   };
 }
 
+function parseStoredProvider(value: unknown, knownSourceIds: Set<string>): SourceProviderProfile | null {
+  if (!isRecord(value) || typeof value.id !== "string" || typeof value.name !== "string" || typeof value.domain !== "string") return null;
+  const sourceIds = safeStrings(value.sourceIds, MAX_LIVE_SOURCES).filter((sourceId) => knownSourceIds.has(sourceId));
+  const discoveredBy = safeStrings(value.discoveredBy, 2).filter((role): role is "balanced-scout" | "counter-scout" => role === "balanced-scout" || role === "counter-scout");
+  const assessmentValue = value.assessment;
+  const assessment = isRecord(assessmentValue) && assessmentValue.providerId === value.id && REPUTATION_ASSESSMENTS.has(assessmentValue.reputationAssessment as string)
+    ? {
+        providerId: value.id,
+        providerName: value.name,
+        reputationAssessment: assessmentValue.reputationAssessment as "established" | "mixed" | "limited-evidence" | "unknown",
+        politicalOrientation: typeof assessmentValue.politicalOrientation === "string" ? assessmentValue.politicalOrientation : "Chưa xác định đủ bằng chứng",
+        ownershipAndAffiliations: safeStrings(assessmentValue.ownershipAndAffiliations, 8),
+        reputationSignals: safeStrings(assessmentValue.reputationSignals, 8),
+        caveats: safeStrings(assessmentValue.caveats, 8),
+        verificationCitations: Array.isArray(assessmentValue.verificationCitations) ? assessmentValue.verificationCitations.map(parseCitation).filter((citation): citation is GeminiCitation => citation !== null).slice(0, 8) : [],
+        reviewStatus: "machine-only" as const,
+      }
+    : undefined;
+  return { id: value.id, name: value.name, domain: value.domain, sourceIds, discoveredBy, ...(assessment ? { assessment } : {}) };
+}
+
 function parseResearch(value: unknown): GeminiResearch | null {
   if (!isRecord(value) || typeof value.report !== "string" || typeof value.model !== "string") return null;
   if (!Array.isArray(value.citations) || !Array.isArray(value.agents) || !Array.isArray(value.sources) || !Array.isArray(value.claims)) return null;
@@ -142,7 +210,7 @@ function parseResearch(value: unknown): GeminiResearch | null {
   }).slice(0, 5);
   const sources = value.sources.flatMap((source): SourceIntelligence[] => {
     if (!isRecord(source) || typeof source.id !== "string" || typeof source.title !== "string" || typeof source.url !== "string" || typeof source.excerpt !== "string" || typeof source.locator !== "string" || typeof source.familyId !== "string") return [];
-    if (!(source.fullTextStatus === "read" || source.fullTextStatus === "partial" || source.fullTextStatus === "metadata-only" || source.fullTextStatus === "inaccessible")) return [];
+    if (!(source.fullTextStatus === "read" || source.fullTextStatus === "partial" || source.fullTextStatus === "grounded-support" || source.fullTextStatus === "metadata-only" || source.fullTextStatus === "inaccessible")) return [];
     try { if (!allowedUrls.has(new URL(source.url).toString())) return []; } catch { return []; }
     const base = { id: source.id, title: source.title, url: source.url, excerpt: source.excerpt.slice(0, 3_000), locator: source.locator, fullTextStatus: source.fullTextStatus } as const;
     const audit = parseStoredAudit(source.audit, base);
@@ -150,6 +218,10 @@ function parseResearch(value: unknown): GeminiResearch | null {
   }).slice(0, MAX_LIVE_SOURCES);
   const coverage = buildCoverageGate(sources.map((source) => ({ id: source.id, familyId: source.familyId, coverageTags: source.audit?.coverageTags || [] })), { requiredCategories: COVERAGE_CATEGORIES });
   const sourcesById = new Map(sources.map((source) => [source.id, source]));
+  const knownSourceIds = new Set(sourcesById.keys());
+  const sourceProviders = Array.isArray(value.sourceProviders)
+    ? value.sourceProviders.map((provider) => parseStoredProvider(provider, knownSourceIds)).filter((provider): provider is SourceProviderProfile => provider !== null).slice(0, MAX_LIVE_SOURCES)
+    : [];
   const claims = value.claims.map((claim) => parseStoredClaim(claim, sourcesById)).filter((claim): claim is NonNullable<typeof claim> => claim !== null).slice(0, 12);
   const claimIdsWithoutEvidence = claims.filter((claim) => claim.citations.length === 0).map((claim) => claim.id);
   const citationAudit = {
@@ -164,7 +236,8 @@ function parseResearch(value: unknown): GeminiResearch | null {
     citations,
     agents,
     sources,
-    sourceAuditStatus: sources.length > 0 && sources.every((source) => source.audit) ? "complete" : "incomplete",
+    sourceProviders,
+    sourceAuditStatus: sources.length > 0 && sources.every((source) => source.audit) && sourceProviders.every((provider) => provider.assessment) ? "complete" : "incomplete",
     coverage,
     claims,
     citationAudit,
@@ -188,28 +261,12 @@ function parseResearchHistory(raw: string | null): ResearchHistoryItem[] {
   }
 }
 
-function mapGroundedSources(citations: GeminiCitation[], extractions: GeminiSourceExtraction[]): ExtractedSourcePacket[] {
-  const extractionByUrl = new Map(extractions.flatMap((source) => typeof source.requestedUrl === "string" ? [[source.requestedUrl, source] as const] : []));
-  return citations.map((citation, index): ExtractedSourcePacket => {
-    const source = extractionByUrl.get(citation.url);
-    const fullTextStatus = source?.status === "read" || source?.status === "partial" || source?.status === "metadata-only" || source?.status === "inaccessible" ? source.status : "inaccessible";
-    return {
-      id: `S${index + 1}`,
-      title: typeof source?.title === "string" && source.title.trim() ? source.title : citation.title,
-      url: typeof source?.finalUrl === "string" ? source.finalUrl : citation.url,
-      excerpt: typeof source?.excerpt === "string" ? source.excerpt.slice(0, 3_000) : "",
-      locator: fullTextStatus === "read" || fullTextStatus === "partial" ? "server-extracted excerpt" : "metadata-only",
-      fullTextStatus,
-    };
-  });
-}
-
 const waves = [
   ["Lập phạm vi", "Orchestrator · Query Planner"],
   ["Tìm nguồn đối trọng", "2 chiến lược truy vấn · tối đa 8 URL"],
   ["Đọc & truy nguyên", "Server Extractor · Heuristic cluster · Coverage"],
   ["Trích xuất luận điểm", "Perspective Analyst · Evidence packet"],
-  ["Kiểm chứng cảnh báo", "Source Auditor · Warning evidence"],
+  ["Kiểm chứng cảnh báo", "Source Auditor · Provider verification + warning evidence"],
   ["Phán quyết bằng chứng", "Evidence Judge"],
   ["Kiểm tra citation Claim Ledger", "Claim → quote → locator → source"],
 ];
@@ -424,6 +481,7 @@ export default function Home() {
 
             {tab === "sources" && geminiResult && <div className="view-stack">
               <section className="content-card"><div className="section-title"><div><span className="eyebrow">PROVENANCE REGISTRY</span><h2>Nguồn và cụm provenance sơ bộ</h2></div><small>{geminiResult.sources.length} URL · {new Set(geminiResult.sources.map((source) => source.familyId)).size} cụm heuristic · audit {geminiResult.sourceAuditStatus}</small></div><div className="grounded-source-list">{geminiResult.sources.map((source,index) => <article className="source-entry" key={source.id}><a href={source.url} target="_blank" rel="noreferrer" title={`Mở nguồn: ${source.title}`}><span>{String(index+1).padStart(2,"0")}</span><div><b>{source.title}</b><small>{source.url}</small></div><em>{source.fullTextStatus} · {provenanceClusterLabel(geminiResult.sources, source.familyId)}</em></a></article>)}</div></section>
+              <section className="content-card"><div className="section-title"><div><span className="eyebrow">PROVIDER REGISTRY</span><h2>Đơn vị cung cấp thông tin</h2></div><small>{(geminiResult.sourceProviders || []).length} đơn vị · kiểm tra bằng Google Search grounding</small></div><div className="agent-output-grid">{(geminiResult.sourceProviders || []).map((provider) => <details key={provider.id}><summary><span><b>{provider.name}</b><small>{provider.sourceIds.join(", ")} · {provider.discoveredBy.join(" + ") || "không rõ scout"}</small></span><em>{provider.assessment?.reputationAssessment || "chưa đánh giá"}</em></summary><div><p><b>Thiên hướng chính trị/biên tập:</b> {provider.assessment?.politicalOrientation || "Chưa xác định đủ bằng chứng"}</p><p><b>Ownership/affiliation:</b> {provider.assessment?.ownershipAndAffiliations.join("; ") || "Chưa có dữ liệu"}</p><p><b>Reputation signals:</b> {provider.assessment?.reputationSignals.join("; ") || "Chưa có dữ liệu"}</p>{provider.assessment?.caveats.length ? <p><b>Caveat:</b> {provider.assessment.caveats.join("; ")}</p> : null}{provider.assessment?.verificationCitations.length ? <p><b>Nguồn kiểm tra:</b> {provider.assessment.verificationCitations.map((citation, index) => <span key={citation.url}> {index > 0 ? " · " : ""}<a href={citation.url} target="_blank" rel="noreferrer">{citation.title}</a></span>)}</p> : null}</div></details>)}</div></section>
               <SourceAuditNotice />
               {geminiResult.sources.map((source) => <SourceWarningPanel key={source.id} source={{ id: source.id, title: source.title, publisher: (() => { try { return new URL(source.url).hostname; } catch { return "Không rõ publisher"; } })(), url: source.url, fullTextStatus: source.fullTextStatus }} warnings={(source.audit?.warnings || []).map((warning, index) => ({ id: `${source.id}-W${index + 1}`, category: warning.category, observableIndicator: warning.observableIndicator, evidenceIds: warning.evidenceVerified ? [`${source.id}:${source.locator}`] : [], evidenceQuote: warning.evidenceVerified ? warning.evidenceQuote : undefined, alternativeExplanation: warning.alternativeExplanation, severity: warning.severity, confidence: warning.confidence, confidenceReason: warning.confidenceReason, status: warning.reviewStatus }))} />)}
             </div>}

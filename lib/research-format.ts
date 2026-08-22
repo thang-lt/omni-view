@@ -36,8 +36,13 @@ export function extractJsonStringField(text: string, field: string): string | nu
 
 export function normalizeAgentMarkdown(text: string): string {
   const envelope = parseJsonEnvelope(text);
-  const extractedMarkdown = extractJsonStringField(text, "analysisMarkdown");
-  const source = envelope && typeof envelope.analysisMarkdown === "string" ? envelope.analysisMarkdown : extractedMarkdown || text;
+  const structuredMarkdown = ["analysisMarkdown", "reportMarkdown"]
+    .map((field) => envelope?.[field])
+    .find((value): value is string => typeof value === "string");
+  const extractedMarkdown = ["analysisMarkdown", "reportMarkdown"]
+    .map((field) => extractJsonStringField(text, field))
+    .find((value): value is string => typeof value === "string");
+  const source = structuredMarkdown || extractedMarkdown || text;
   let normalized = source.trim();
   const fencedMarkdown = normalized.match(/^```(?:markdown|md)?\s*([\s\S]*?)\s*```$/i);
   if (fencedMarkdown) normalized = fencedMarkdown[1].trim();

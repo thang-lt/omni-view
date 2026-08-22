@@ -1,5 +1,15 @@
 # Testing and Operations
 
+## Gemini debug logs trong development
+
+Khi chạy `npm run dev`, mỗi Gemini operation in log theo ba stage `REQUEST`, `RESPONSE`, `ERROR`. API key không được đưa vào object log.
+
+- Browser DevTools → Console → filter `[Gemini]` để xem prompt, config, raw response và lỗi theo agent.
+- Terminal chạy dev server → filter `[Gemini Gateway]` để xem request ID, operation, prompt gửi upstream, HTTP status và raw payload Gemini.
+- Browser DevTools → Network → chọn `POST /api/research/gemini` → Payload/Response để đối chiếu dữ liệu HTTP thực tế.
+
+Các log chứa topic, source excerpt và model output nên chỉ bật trong development; production build không in các debug log này.
+
 ## 1. Runtime requirement và commands
 
 Yêu cầu Node.js `>=22.13.0`. Shell hệ thống có thể mặc định vào Node 20; trên máy hiện tại Node 22 nằm tại `/opt/homebrew/bin/node`.
@@ -46,7 +56,7 @@ Các test application/infrastructure dùng mock/fake response, không cần netw
 - [ ] `.openai/hosting.json` binding phản ánh môi trường thật; hiện `d1` và `r2` là `null`.
 - [ ] Nếu bật D1: apply migration và test repository trước khi tuyên bố persistence hoạt động.
 - [ ] Chạy một smoke E2E với Gemini test key giới hạn quota; không commit key/output nhạy cảm.
-- [ ] Xác nhận chỉ hai Scout có search; Perspective, các lô Source Auditor và Judge đều không search; gateway chỉ extract URL từ grounding metadata.
+- [ ] Xác nhận hai Scout search evidence; Source Auditor chỉ search provider registry; Perspective và Judge không search; gateway chỉ extract URL từ grounding metadata của từng response.
 - [ ] Xác nhận nguồn không đọc được hiện đúng read status.
 - [ ] Xác nhận warning quote dưới 20 ký tự/không khớp bị downgrade, quote hợp lệ được hiển thị và status là `machine-only`.
 - [ ] Xác nhận coverage chỉ tính tag allowlist từ nguồn readable và citation quote không khớp bị loại.
@@ -54,4 +64,4 @@ Các test application/infrastructure dùng mock/fake response, không cần netw
 
 ## 5. Observability hiện tại
 
-UI giữ tối đa 20 dòng orchestration log trong mỗi local history record. Chưa có server log model riêng, trace ID, token/cost metrics, durable audit log hoặc alerting. `agent_logs` mới là D1 schema, chưa được ghi ở runtime.
+UI giữ tối đa 20 dòng orchestration log trong mỗi local history record. Development có console log theo operation và request ID ngắn ở gateway, nhưng chưa có token/cost metrics, durable audit log, production tracing hoặc alerting. `agent_logs` mới là D1 schema, chưa được ghi ở runtime.

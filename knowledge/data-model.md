@@ -22,8 +22,8 @@ type ExtractedSourcePacket = {
   title: string;
   url: string;
   excerpt: string;
-  locator: string; // hiện là "server-extracted excerpt" hoặc "metadata-only"
-  fullTextStatus: "read" | "partial" | "metadata-only" | "inaccessible";
+  locator: string; // direct source excerpt, Gemini grounding support, hoặc metadata-only
+  fullTextStatus: "read" | "partial" | "grounded-support" | "metadata-only" | "inaccessible";
 };
 
 type SourceWarningArtifact = {

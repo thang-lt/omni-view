@@ -11,8 +11,14 @@ import {
 test("gateway accepts bounded research requests and normalizes token limits", () => {
   const result = validateGeminiGatewayRequest({ prompt: "Research this claim", useSearch: true, maxOutputTokens: 99999 });
   assert.equal(result.prompt, "Research this claim");
+  assert.equal(result.operation, "unknown");
   assert.equal(result.useSearch, true);
+  assert.equal(result.extractSources, true);
   assert.equal(result.maxOutputTokens, 3000);
+  assert.equal(validateGeminiGatewayRequest({ prompt: "Audit providers", useSearch: true, extractSources: false }).extractSources, false);
+  assert.equal(validateGeminiGatewayRequest({ operation: "audit", prompt: "Audit providers" }).operation, "audit");
+  assert.equal(validateGeminiGatewayRequest({ operation: "judge-claims", prompt: "Judge claims" }).operation, "judge-claims");
+  assert.equal(validateGeminiGatewayRequest({ operation: "judge-report", prompt: "Write report" }).operation, "judge-report");
 });
 
 test("gateway retries only transient upstream statuses", () => {
@@ -46,4 +52,5 @@ test("gateway rejects empty, oversized, or malformed requests", () => {
   assert.throws(() => validateGeminiGatewayRequest({ prompt: "x".repeat(50_001) }));
   assert.throws(() => validateGeminiGatewayRequest({ prompt: "ok", responseSchema: [] }));
   assert.throws(() => validateGeminiGatewayRequest({ prompt: "ok", responseSchema: { value: "x".repeat(20_001) } }));
+  assert.throws(() => validateGeminiGatewayRequest({ operation: "not-an-agent", prompt: "ok" }));
 });

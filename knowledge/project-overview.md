@@ -13,7 +13,7 @@
 | Research Desk responsive | Đã có | Một route chính, lịch sử cục bộ tối đa 5 phiên |
 | Hai Source Scout | Đã có | Balanced Scout và Counter-evidence Scout search song song, tối đa 8 URL sau dedupe URL chính xác |
 | Gemini same-origin gateway | Đã có | Validate body/prompt/schema/token, timeout và retry tối đa 3 lần cho 429/5xx; browser vẫn gửi BYOK cho từng request |
-| Server source extraction | Đã có | Không có public arbitrary-fetch route; gateway chỉ extract tối đa 8 URL lấy từ Gemini grounding metadata |
+| Server source extraction | Đã có | Không có public arbitrary-fetch route; gateway extract toàn bộ URL duy nhất lấy từ Gemini grounding metadata theo concurrency 4; use case chọn tối đa 8 nguồn cuối |
 | Source family service | Đã có | Heuristic cluster theo canonical URL, fingerprint trùng chính xác và upstream ID rõ ràng; chưa có fuzzy similarity/ownership graph |
 | Structured source audit | Đã có | Warning quote tối thiểu 20 ký tự phải khớp excerpt; quote đã xác minh được hiển thị; status vẫn `machine-only` |
 | Coverage gate | Đã có | Chỉ nhận 7 tag allowlist từ nguồn `read`/`partial`, tối đa 4 tag/nguồn; phân loại vẫn phụ thuộc model |

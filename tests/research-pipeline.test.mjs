@@ -83,6 +83,37 @@ test("coverage tags are allowlisted, capped, and removed when source text was no
   assert.deepEqual(artifact.sourceAudits[0].coverageTags, []);
 });
 
+test("grounding-support content can contribute explicitly classified coverage", () => {
+  const groundedSources = [{ ...sources[0], fullTextStatus: "grounded-support", locator: "Google grounding support" }];
+  const artifact = parseSourceAuditArtifact(JSON.stringify({
+    analysisMarkdown: "Audit",
+    sourceAudits: [{ sourceIndex: 1, sourceType: "primary", stance: "claimant", stakeholderGroups: [], coverageTags: ["primary", "claimant"], warnings: [] }],
+  }), groundedSources);
+  assert.deepEqual(artifact.sourceAudits[0].coverageTags, ["primary", "claimant"]);
+});
+
+test("provider assessments are restricted to the stored registry and keep verification citations", () => {
+  const artifact = parseSourceAuditArtifact(JSON.stringify({
+    analysisMarkdown: "Provider audit",
+    providerAssessments: [{
+      providerId: "P1",
+      reputationAssessment: "mixed",
+      politicalOrientation: "Issue advocacy; left/right label not established",
+      ownershipAndAffiliations: ["Member-funded"],
+      reputationSignals: ["Publishes corrections", "Third-party criticism exists"],
+      caveats: ["Outlet-level assessment does not decide article accuracy"],
+    }],
+    sourceAudits: sources.map((_, index) => ({ sourceIndex: index + 1, sourceType: "journalistic", stance: "unclear", stakeholderGroups: [], coverageTags: [], warnings: [] })),
+  }), sources, {
+    providers: [{ id: "P1", name: "publisher.example", domain: "publisher.example", sourceIds: ["source-1"], discoveredBy: ["balanced-scout"] }],
+    verificationCitations: [{ title: "Independent review", url: "https://review.example/publisher" }],
+  });
+
+  assert.equal(artifact.status, "complete");
+  assert.equal(artifact.providerAssessments[0].reputationAssessment, "mixed");
+  assert.equal(artifact.providerAssessments[0].verificationCitations[0].url, "https://review.example/publisher");
+});
+
 test("duplicate or missing source audits are exposed instead of hidden by fallbacks", () => {
   const artifact = parseSourceAuditArtifact(JSON.stringify({
     analysisMarkdown: "Incomplete",
@@ -196,4 +227,22 @@ test("judge normalizes fenced report markdown before presentation", () => {
   }), sources);
 
   assert.equal(artifact.reportMarkdown, "# Kết luận\n\nNội dung báo cáo.");
+});
+
+test("judge recovers formatted report markdown when claims JSON is truncated", () => {
+  const artifact = parseJudgeArtifact(
+    `{ "reportMarkdown": "## Tóm tắt điều hành\\n\\n- Nội dung chính.\\n\\n## Kết luận có điều kiện\\n\\n- Cần kiểm chứng thêm.", "claims": [{ "id": "C1"`,
+    sources,
+  );
+
+  assert.equal(
+    artifact.reportMarkdown,
+    "## Tóm tắt điều hành\n\n- Nội dung chính.\n\n## Kết luận có điều kiện\n\n- Cần kiểm chứng thêm.",
+  );
+});
+
+test("claim-only judge output does not leak its JSON into report markdown", () => {
+  const artifact = parseJudgeArtifact(JSON.stringify({ claims: [] }), sources);
+
+  assert.equal(artifact.reportMarkdown, "");
 });

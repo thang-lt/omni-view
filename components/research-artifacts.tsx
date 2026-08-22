@@ -142,7 +142,7 @@ export interface WarningSourceView {
   readonly title: string;
   readonly publisher: string;
   readonly url?: string;
-  readonly fullTextStatus?: "read" | "partial" | "metadata-only" | "inaccessible" | "blocked";
+  readonly fullTextStatus?: "read" | "partial" | "grounded-support" | "metadata-only" | "inaccessible" | "blocked";
 }
 
 export interface SourceWarningPanelProps {
@@ -173,7 +173,7 @@ const AUDIT_STATUS_LABELS: Record<SourceWarningView["status"], string> = {
 export function SourceAuditNotice() {
   return <aside className="audit-disclaimer" aria-label="Cách đọc cảnh báo nguồn">
     <b>Cách đọc cảnh báo nguồn</b>
-    <p>Warning phản ánh một tín hiệu cụ thể có evidence, không phải điểm uy tín của cả tờ báo. Không có warning cũng không phải chứng nhận rằng toàn bộ nội dung luôn trung lập hoặc chính xác.</p>
+    <p>Warning phản ánh một tín hiệu cụ thể có evidence, không phải phán quyết cho cả tờ báo. Đánh giá provider là kiểm tra máy có Google Search grounding; thiên hướng chính trị không đồng nghĩa thông tin sai, và vẫn cần người duyệt khi dùng cho quyết định quan trọng.</p>
   </aside>;
 }
 

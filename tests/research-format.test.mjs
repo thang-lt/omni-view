@@ -15,6 +15,15 @@ test("unwraps complete structured output and markdown fences", () => {
   assert.equal(normalizeAgentMarkdown(complete), "## Bias của pipeline\n\n- Selection bias.");
 });
 
+test("recovers report markdown from a truncated judge JSON response", () => {
+  const truncated = `{ "reportMarkdown": "## Tóm tắt điều hành\\n\\n- Kết quả chính.\\n\\n## Kết luận có điều kiện\\n\\n- Cần thêm dữ liệu.", "claims": [{ "id": "C1"`;
+
+  assert.equal(
+    normalizeAgentMarkdown(truncated),
+    "## Tóm tắt điều hành\n\n- Kết quả chính.\n\n## Kết luận có điều kiện\n\n- Cần thêm dữ liệu.",
+  );
+});
+
 test("repairs escaped line breaks and compact heading syntax in a report", () => {
   const malformed = "```markdown\n#Kết luận\\n\\n##Điều biết chắc\\n\\n- Dữ kiện đã kiểm tra.\n```";
   assert.equal(

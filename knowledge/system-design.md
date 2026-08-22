@@ -17,7 +17,7 @@ flowchart LR
     D1["D1 schema + migration"] -. "chưa nối runtime" .-> O
 ```
 
-Gateway cùng origin nhận BYOK cho từng request, validate body/prompt/token/schema rồi forward sang Gemini. Với search response thành công, chính gateway lấy tối đa 8 URL duy nhất từ grounding metadata và extract; không còn API đọc URL tùy ý từ browser. Gateway không phải secret vault: key vẫn bắt đầu ở browser và đi qua gateway process.
+Gateway cùng origin nhận BYOK cho từng request, validate body/prompt/token/schema rồi forward sang Gemini. Với Scout search response thành công, chính gateway extract toàn bộ URL duy nhất từ grounding metadata theo concurrency 4; application use case sau đó chọn tối đa 8 nguồn cho research packet. Không còn API đọc URL tùy ý từ browser. Gateway không phải secret vault: key vẫn bắt đầu ở browser và đi qua gateway process.
 
 ## 2. Pipeline live
 
@@ -35,15 +35,18 @@ sequenceDiagram
     O->>O: Exact URL dedupe, cap 8
     G->>E: Grounding URLs only
     E-->>O: Extractions đi kèm Scout response
-    O->>O: Canonical URL/exact fingerprint source families
-    par No-search analysis
+    O->>O: Provider Registry + source families
+    par Analysis and bounded provider verification
       O->>G: Perspective Analyst + evidence packet
     and
-      O->>G: Source Warning Auditor + JSON schema
+      O->>G: Provider Verification + provider registry + google_search
     end
-    O->>O: Verify warning quote ≥20 chars; readable-only coverage
-    O->>G: Evidence Judge + JSON schema, no search
+    G-->>O: Grounded provider report, hoặc fallback unknown
+    O->>G: Source Warning Auditor + provider report + JSON schema, no search
+    O->>O: Merge provider assessments; verify warning quote ≥20 chars; content-backed coverage
+    O->>G: Evidence Judge · Claim Ledger + JSON schema, no search
     O->>O: Exact quote match + character locator + citation status
+    O->>G: Evidence Judge · Report + validated Claim Ledger, no search
 ```
 
 ## 3. Layer responsibilities
@@ -51,7 +54,7 @@ sequenceDiagram
 | Layer | Thành phần | Trách nhiệm |
 |---|---|---|
 | Domain | `domain/research/*` | Immutable contracts, factories và invariant cho source/evidence/claim/warning/coverage |
-| Application | `run-live-research.ts` | Live use case; điều phối 5 operation qua ports, family/coverage/audit/Judge và completion logs |
+| Application | `run-live-research.ts` | Live use case; điều phối 6 operation qua ports, family/provider/coverage/audit/Judge và completion logs |
 | Application | `pipeline-artifacts.ts` | Evidence packet, parse và downgrade audit, parse Judge claims |
 | Application | `source-intelligence.ts` | URL canonicalization, source families, coverage và citation completeness |
 | Infrastructure | `source/extraction.ts` | Bounded fetch, redirect validation, readable-text extraction |
@@ -74,7 +77,7 @@ Evidence packet là một JSON object được `JSON.stringify` và đặt trong
 
 ## 5. Failure behavior
 
-- Hai Scout và hai analysis worker dùng `Promise.all`; một request lỗi sau retry làm run dừng.
+- Hai Scout, Perspective Analyst và các lô Source Auditor dùng `Promise.all`; một request lỗi sau retry làm run dừng.
 - Mỗi source extraction có fallback `inaccessible`, nên một nguồn không đọc được không tự làm mất cả run.
 - Không grounding URL: dừng, không tạo báo cáo giả.
 - Gateway retry 429/5xx tối đa 3 attempt với exponential delay + jitter; mỗi Gemini attempt timeout 30 giây.

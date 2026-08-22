@@ -22,7 +22,7 @@ export type SourceExtractionOptions = {
   timeoutMs?: number;
 };
 
-const DEFAULT_MAX_REDIRECTS = 3;
+const DEFAULT_MAX_REDIRECTS = 6;
 const DEFAULT_MAX_BYTES = 512_000;
 const DEFAULT_MAX_EXCERPT_CHARS = 20_000;
 const DEFAULT_TIMEOUT_MS = 12_000;
@@ -197,7 +197,11 @@ export async function extractSource(input: string, options: SourceExtractionOpti
           method: "GET",
           redirect: "manual",
           signal: controller.signal,
-          headers: { "accept": "text/html, application/xhtml+xml, text/plain, text/markdown, application/json;q=0.8" },
+          headers: {
+            "accept": "text/html, application/xhtml+xml, text/plain, text/markdown, application/json;q=0.8",
+            "accept-language": "vi,en;q=0.8",
+            "user-agent": "DaChieuResearchDesk/0.1 (bounded research source reader)",
+          },
         });
       } catch (error) {
         return inaccessible(requestedUrl, current.toString(), redirects, error);

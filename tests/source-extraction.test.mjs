@@ -24,9 +24,14 @@ test("accepts public HTTP(S) URLs and blocks unsafe literal hosts", () => {
 });
 
 test("extracts a readable bounded excerpt from HTML", async () => {
-  const fetchImpl = async () => new Response(`<!doctype html><html><head><title>  Sample &amp; Report </title><style>.x{}</style></head><body><main><h1>Finding</h1><p>Useful <b>evidence</b> &amp; context.</p><script>steal()</script></main></body></html>`, {
-    headers: { "content-type": "text/html; charset=utf-8" },
-  });
+  const fetchImpl = async (_input, init) => {
+    const headers = new Headers(init?.headers);
+    assert.match(headers.get("user-agent"), /DaChieuResearchDesk/);
+    assert.match(headers.get("accept-language"), /vi/);
+    return new Response(`<!doctype html><html><head><title>  Sample &amp; Report </title><style>.x{}</style></head><body><main><h1>Finding</h1><p>Useful <b>evidence</b> &amp; context.</p><script>steal()</script></main></body></html>`, {
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  };
 
   const result = await extractSource("https://example.com/report", { fetchImpl });
   assert.equal(result.status, "read");

@@ -1,7 +1,7 @@
 export const SOURCE_TYPES = ["primary", "secondary", "academic", "journalistic", "commentary", "dataset"] as const;
 export type SourceType = (typeof SOURCE_TYPES)[number];
 
-export const FULL_TEXT_STATUSES = ["read", "partial", "metadata-only", "blocked"] as const;
+export const FULL_TEXT_STATUSES = ["read", "partial", "grounded-support", "metadata-only", "blocked"] as const;
 export type FullTextStatus = (typeof FULL_TEXT_STATUSES)[number];
 
 export interface SourceRecord {

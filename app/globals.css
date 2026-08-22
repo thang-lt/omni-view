@@ -47,7 +47,7 @@ button { color:inherit; }
 .markdown-body h2 { margin:30px 0 12px; padding-top:2px; font-size:22px; }
 .markdown-body h3 { margin:23px 0 9px; color:var(--green); font-size:17px; }
 .markdown-body h4 { margin:18px 0 7px; font-size:15px; }
-.markdown-body p { margin:0 0 14px; }.markdown-body strong { color:#202522; }
+.markdown-body p { margin:0 0 14px; white-space:pre-line; }.markdown-body strong { color:#202522; }
 .markdown-body ul,.markdown-body ol { margin:0 0 16px; padding-left:25px; }.markdown-body li { margin:5px 0; padding-left:3px; }.markdown-body li::marker { color:var(--red-dark); font-weight:700; }
 .markdown-body blockquote { margin:18px 0; padding:11px 16px; border-left:3px solid var(--amber); background:#f5edde; color:#555d58; }.markdown-body blockquote p { margin:0; }
 .markdown-body a { color:var(--green); text-decoration-thickness:1px; text-underline-offset:3px; }.markdown-body a:hover { color:var(--red-dark); }

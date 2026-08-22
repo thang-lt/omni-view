@@ -51,7 +51,7 @@ export const sources = sqliteTable("sources", {
   stakeholderGroups: text("stakeholder_groups", { mode: "json" }).$type<string[]>().notNull(),
   coverageTags: text("coverage_tags", { mode: "json" }).$type<string[]>().notNull(),
   upstreamSourceIds: text("upstream_source_ids", { mode: "json" }).$type<string[]>().notNull(),
-  fullTextStatus: text("full_text_status", { enum: ["read", "partial", "metadata-only", "blocked", "inaccessible"] }).notNull(),
+  fullTextStatus: text("full_text_status", { enum: ["read", "partial", "grounded-support", "metadata-only", "blocked", "inaccessible"] }).notNull(),
   ownership: text("ownership"),
   fundingNotes: text("funding_notes", { mode: "json" }).$type<string[]>().notNull(),
   contentHash: text("content_hash"),

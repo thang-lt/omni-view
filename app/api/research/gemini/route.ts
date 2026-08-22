@@ -3,10 +3,19 @@ import {
   shouldFallbackToJsonMode,
   shouldRetryGeminiStatus,
   validateGeminiGatewayRequest,
-} from "../../../../infrastructure/gemini/request";
-import { extractSource } from "../../../../infrastructure/source/extraction";
+} from "../../../../infrastructure/gemini/request.ts";
+import { extractSource } from "../../../../infrastructure/source/extraction.ts";
+import { collectGroundingSupportExcerpts, type GroundingCandidate } from "../../../../infrastructure/gemini/grounding-support.ts";
 
 const MODEL = "gemini-3.5-flash-lite";
+const GEMINI_DEBUG_LOGS = process.env.NODE_ENV === "development";
+
+function printGatewayDebug(operation: string, requestId: string, stage: "REQUEST" | "RESPONSE" | "ERROR", value: unknown) {
+  if (!GEMINI_DEBUG_LOGS) return;
+  const label = `[Gemini Gateway][${requestId}][${operation}][${stage}]`;
+  if (stage === "ERROR") console.error(label, value);
+  else console.log(label, value);
+}
 
 export async function POST(request: Request) {
   const contentLength = Number(request.headers.get("content-length") || 0);
@@ -20,6 +29,15 @@ export async function POST(request: Request) {
   } catch (error) {
     return Response.json({ error: { message: error instanceof Error ? error.message : "Invalid request" } }, { status: 400 });
   }
+
+  const requestId = crypto.randomUUID().slice(0, 8);
+  printGatewayDebug(input.operation, requestId, "REQUEST", {
+    prompt: input.prompt,
+    useSearch: input.useSearch,
+    extractSources: input.extractSources,
+    maxOutputTokens: input.maxOutputTokens,
+    responseSchema: input.responseSchema,
+  });
 
   try {
     const buildRequestBody = (responseSchema: Record<string, unknown> | undefined, forceJson: boolean) => JSON.stringify({
@@ -52,7 +70,7 @@ export async function POST(request: Request) {
 
     type GeminiPayload = {
       error?: { status?: string; message?: string };
-      candidates?: Array<{ groundingMetadata?: { groundingChunks?: Array<{ web?: { uri?: string } }> } }>;
+      candidates?: GroundingCandidate[];
       [key: string]: unknown;
     };
     let upstream = await callUpstream(buildRequestBody(input.responseSchema, Boolean(input.responseSchema)));
@@ -61,15 +79,36 @@ export async function POST(request: Request) {
       upstream = await callUpstream(buildRequestBody(undefined, true));
       payload = await upstream.json().catch(() => ({})) as GeminiPayload;
     }
-    if (upstream.ok && input.useSearch) {
-      const groundedUrls = Array.from(new Set((payload.candidates?.[0]?.groundingMetadata?.groundingChunks || [])
-        .map((chunk) => chunk.web?.uri)
-        .filter((url): url is string => typeof url === "string"))).slice(0, 8);
-      const sourceExtractions = await Promise.all(groundedUrls.map((url) => extractSource(url, { maxExcerptChars: 3_000 })));
+    if (upstream.ok && input.useSearch && input.extractSources) {
+      const candidate = payload.candidates?.[0];
+      const chunks = candidate?.groundingMetadata?.groundingChunks || [];
+      const groundingExcerpts = collectGroundingSupportExcerpts(candidate);
+      const chunksByUrl = new Map<string, { url: string; groundingExcerpt: string }>();
+      for (const [index, chunk] of chunks.entries()) {
+        const url = chunk.web?.uri;
+        if (typeof url !== "string") continue;
+        const current = chunksByUrl.get(url);
+        const nextExcerpt = groundingExcerpts[index] || "";
+        const groundingExcerpt = current?.groundingExcerpt && nextExcerpt && !current.groundingExcerpt.includes(nextExcerpt)
+          ? `${current.groundingExcerpt}\n\n${nextExcerpt}`.slice(0, 3_000)
+          : current?.groundingExcerpt || nextExcerpt;
+        chunksByUrl.set(url, { url, groundingExcerpt });
+      }
+      const uniqueChunks = Array.from(chunksByUrl.values());
+      const sourceExtractions = [];
+      const extractionConcurrency = 4;
+      for (let start = 0; start < uniqueChunks.length; start += extractionConcurrency) {
+        sourceExtractions.push(...await Promise.all(uniqueChunks.slice(start, start + extractionConcurrency).map(async ({ url, groundingExcerpt }) => ({
+          ...await extractSource(url, { maxExcerptChars: 3_000, maxRedirects: 6 }),
+          groundingExcerpt,
+        }))));
+      }
       payload.sourceExtractions = sourceExtractions;
     }
+    printGatewayDebug(input.operation, requestId, "RESPONSE", { httpStatus: upstream.status, payload });
     return Response.json(payload, { status: upstream.status, headers: { "Cache-Control": "no-store" } });
-  } catch {
+  } catch (error) {
+    printGatewayDebug(input.operation, requestId, "ERROR", error);
     return Response.json({ error: { message: "Không thể kết nối Gemini từ research gateway" } }, { status: 502 });
   }
 }
