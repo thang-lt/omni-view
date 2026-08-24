@@ -124,6 +124,11 @@ const CLAIM_VERDICTS = new Set(["supported", "mixed", "unsupported", "unresolved
 const CONFIDENCE_LEVELS = new Set(["low", "medium", "high"]);
 const WARNING_CATEGORIES = new Set(["conflict-of-interest", "selection-bias", "methodology", "factual-reliability", "misinformation-risk", "propaganda-technique", "hostile-language", "political-framing", "recency", "geographic-scope", "provenance"]);
 const REPUTATION_ASSESSMENTS = new Set(["established", "mixed", "limited-evidence", "unknown"]);
+const REPUTATION_ASSESSMENT_LABELS: Record<string, string> = {
+  established: "uy tín đã xác lập",
+  mixed: "đánh giá hỗn hợp",
+  "limited-evidence": "bằng chứng hạn chế",
+};
 
 function safeStrings(value: unknown, limit = 20): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim()).slice(0, limit) : [];
@@ -371,7 +376,9 @@ function ProviderAndSourceAudit({ research }: { research: GeminiResearch }) {
         return <details key={provider.id}>
           <summary>
             <span><b>{provider.name}</b><small>{provider.domain} · {providerSources.length} nguồn · {warningCount} warning</small></span>
-            <em>{provider.assessment?.reputationAssessment || "chưa đánh giá"}</em>
+            {provider.assessment?.reputationAssessment && REPUTATION_ASSESSMENT_LABELS[provider.assessment.reputationAssessment] ? (
+              <em>{REPUTATION_ASSESSMENT_LABELS[provider.assessment.reputationAssessment]}</em>
+            ) : null}
           </summary>
           <div className="provider-audit-body">
             <div className="provider-profile">

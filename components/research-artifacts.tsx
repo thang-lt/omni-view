@@ -130,8 +130,8 @@ export function SourceWarningPanel({ source, warnings }: SourceWarningPanelProps
     </div>
     {source.url && <p className="source-warning-link"><a href={source.url} target="_blank" rel="noreferrer">Mở nguồn gốc ↗</a></p>}
     {(source.sourceType || source.stance || source.stakeholderGroups?.length) && <div className="source-audit-metadata">
-      {source.sourceType && <span><b>Loại nguồn</b>{source.sourceType}</span>}
-      {source.stance && <span><b>Lập trường</b>{source.stance}</span>}
+      {source.sourceType && <span><b>Loại nguồn</b>{source.sourceType === "unknown" ? "Chưa xác định" : source.sourceType}</span>}
+      {source.stance && <span><b>Lập trường</b>{source.stance === "unclear" ? "Chưa rõ" : source.stance}</span>}
       {source.stakeholderGroups?.length ? <span><b>Stakeholder</b>{source.stakeholderGroups.join(", ")}</span> : null}
     </div>}
     {warnings.length === 0
