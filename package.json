@@ -1,6 +1,7 @@
 {
   "name": "da-chieu-research-desk",
   "version": "0.1.0",
+  "description": "Multi-agent research desk with Gemini Search grounding, evidence-linked source warnings, provider checks, and a validated claim ledger.",
   "private": true,
   "engines": {
     "node": ">=22.13.0"

@@ -52,10 +52,9 @@ Status banner 34px
 - Run ribbon + meter.
 - Result tabs.
 - Metric cards.
-- Coverage matrix.
 - Source list/filter.
 - Claim ledger.
-- Bias audit cards.
+- Khối Provider Registry + Source Audit ngay dưới Analysis Roles: mỗi provider chứa verification citations và các source-warning card có quote provenance của nguồn thuộc provider đó.
 - Agent append-only log.
 - Evidence inspector.
 - Gemini key modal.
@@ -84,9 +83,12 @@ Nên dùng:
 - “Bằng chứng hiện có cho thấy…”
 - “Chưa đủ dữ liệu để kết luận.”
 - “Cảnh báo, không phải phán quyết về toàn bộ nguồn.”
+- “Quote khớp grounding-support model-generated, không phải nguyên văn trang nguồn.”
+- “Đủ nhóm theo phân loại máy; chưa thay thế đánh giá chuyên gia.”
 
 Không dùng:
 
 - “AI đã xác định sự thật.”
 - “Chính xác 100%.”
 - Confidence dưới dạng xác suất nếu chưa hiệu chuẩn.
+- Perspective ID như một nhãn uy tín hoặc verdict factual.

@@ -2,7 +2,7 @@
 
 ## 1. Product statement
 
-Cho phép người dùng nhập một sự kiện hoặc luận điểm; hệ thống tìm nguồn và phản chứng, đọc excerpt có giới hạn, trình bày coverage, claim, warning nguồn và mức bất định có thể kiểm tra lại.
+Cho phép người dùng nhập một sự kiện hoặc luận điểm; hệ thống tìm nguồn và phản chứng, đọc excerpt có giới hạn, trình bày claim, warning nguồn và mức bất định có thể kiểm tra lại.
 
 ## 2. Job to be done
 
@@ -13,11 +13,11 @@ Cho phép người dùng nhập một sự kiện hoặc luận điểm; hệ th
 1. Kết nối Gemini BYOK.
 2. Nhập topic từ 8–180 ký tự và bắt đầu phiên live.
 3. Hai Scout chạy Google Search bằng hai chiến lược độc lập về truy vấn.
-4. Với từng Scout response, Gemini gateway đọc toàn bộ URL duy nhất do chính grounding metadata trả về theo nhóm concurrency; use case sau đó gộp và chọn tối đa 8 URL cho tập nghiên cứu.
+4. Với từng Scout response, Gemini gateway đọc toàn bộ URL duy nhất do chính grounding metadata trả về theo nhóm concurrency; use case sau đó xen kẽ hai danh sách để chọn tối đa 8 URL cho tập nghiên cứu, tránh một Scout chiếm hết quota.
 5. Hệ thống lưu Provider Registry theo domain, source IDs và scout đã phát hiện đơn vị đó.
-6. Perspective Analyst đọc toàn bộ evidence packet; Source Warning Auditor chạy Provider Verification có Search rồi structured audit không Search theo lô tối đa 4 nguồn. Provider Verification lỗi/rỗng không làm dừng run mà hạ assessment về `unknown`/`limited-evidence`.
+6. Perspective Analyst đọc toàn bộ evidence packet; nhánh Provider Verification của Source Warning Auditor dùng Search, sau đó structured audit không Search theo lô tối đa 4 nguồn. Provider Verification lỗi/rỗng không làm dừng run mà hạ assessment về `unknown`/`limited-evidence`.
 7. Evidence Judge tạo Claim Ledger có cấu trúc trước, kiểm tra citation, rồi viết báo cáo Markdown nhất quán với ledger đó.
-8. UI hiển thị Coverage Matrix, report, claims, provider assessments, source families, read status và warning.
+8. UI hiển thị report, claims, provider assessments, source families, read status và warning.
 9. Phiên hoàn tất được lưu cục bộ; có thể mở lại một trong 5 phiên gần nhất.
 
 ## 4. Functional requirements đã triển khai
@@ -33,7 +33,7 @@ Cho phép người dùng nhập một sự kiện hoặc luận điểm; hệ th
 - Balanced Source Scout ưu tiên nguồn sơ cấp, dữ liệu và phương pháp.
 - Counter-evidence Scout chủ động tìm phản chứng, tổ chức bị phê phán, nhóm chịu tác động và chuyên gia không cùng lợi ích.
 - Mỗi Scout không biết output của Scout kia tại thời điểm search.
-- Gộp và cắt tối đa 8 URL grounding.
+- Gateway/Extractor không cắt ở 8 URL: từng Scout response được extract toàn bộ URL grounding duy nhất. Use case mới dedupe và xen kẽ hai danh sách để chốt tối đa 8 nguồn đưa vào các agent phân tích.
 
 ### FR-03 — Grounding-scoped server extraction
 
@@ -47,10 +47,13 @@ Cho phép người dùng nhập một sự kiện hoặc luận điểm; hệ th
 
 ### FR-04 — Structured research artifacts
 
-- Source audit gồm source type, stance, stakeholder groups, coverage tags và warnings.
-- Evidence quote của warning phải dài tối thiểu 20 ký tự và khớp exact substring không phân biệt hoa thường; nếu không thì severity bị hạ xuống `info`, confidence `low`. Quote đã xác minh được hiển thị trong Warning Panel.
-- Claim citation chỉ được tạo từ `evidenceQuote` khớp exact substring trong source excerpt; locator gồm locator nguồn và character offset.
-- Coverage gate kiểm tra 7 nhóm allowlist: primary, claimant, counterparty, affected, independent expert, local và counterevidence. Nguồn `metadata-only`/`inaccessible` không được đóng góp coverage; `grounded-support` có thể đóng góp coverage khi content đủ để phân loại nhưng phải giữ caveat provenance; mỗi nguồn tối đa 4 tag.
+- Mỗi nguồn giữ danh sách `evidencePassages`, tách `direct` khỏi `grounding-support`; direct excerpt không bị ghi đè khi cùng URL còn có grounding support.
+- Perspective Analyst trả artifact có cấu trúc: thesis, source IDs, stakeholder, assumptions, omissions, phản biện mạnh nhất và blind spots định tính. Markdown hiển thị được sinh lại từ artifact này.
+- `Perspective.id` là chuỗi tự do để định danh/hiển thị, ví dụ `official_authority_perspective` hoặc `critical_public_perspective`; không dùng ID này làm verdict hay reputation score.
+- Source audit gồm source type, stance, stakeholder groups và warnings. Provider Verification chỉ chạy một lần cho mỗi provider trong run, kể cả provider xuất hiện ở nhiều audit batch.
+- Evidence quote của warning phải dài tối thiểu 20 ký tự và khớp exact substring không phân biệt hoa thường trong một evidence passage; nếu không thì severity bị hạ xuống `info`, confidence `low`. Quote đã xác minh, locator và provenance được hiển thị trong Warning Panel.
+- Claim citation phải khai báo quan hệ `supports`, `contradicts` hoặc `context`; quote tối thiểu 20 ký tự phải khớp một evidence passage. `supported` cần support, `unsupported` cần contradiction, `mixed` cần cả hai; thiếu quan hệ bắt buộc thì parser hạ claim về `unresolved/low`.
+- Claim chỉ dựa trên `grounding-support` không được giữ confidence `high` vì passage này là nội dung model-generated được Search liên kết, không phải quote nguyên văn trang nguồn.
 - Evidence packet được JSON encode bên trong vùng dữ liệu không đáng tin để source text không phá cấu trúc packet bằng delimiter giả.
 
 ### FR-05 — Trust communication
@@ -58,7 +61,8 @@ Cho phép người dùng nhập một sự kiện hoặc luận điểm; hệ th
 - UI ghi rõ warning confidence không phải source reliability.
 - Warning hiện tại luôn là `machine-only`; chưa có human review workflow.
 - Quan điểm chính trị khác không tự động đồng nghĩa sai, thù ghét hoặc disinformation.
-- Read status và coverage gap được hiển thị.
+- Citation kiểm tra provider được gắn theo URL mà auditor chọn cho đúng provider; không tự động gắn toàn bộ citation của cả batch cho mọi provider.
+- Read status và blind spots định tính được hiển thị.
 
 ### FR-06 — Local history
 
@@ -77,12 +81,12 @@ Cho phép người dùng nhập một sự kiện hoặc luận điểm; hệ th
 
 ## 6. Acceptance criteria hiện tại
 
-- Hai Scout search để tìm evidence; Source Warning Auditor search có giới hạn để kiểm tra đúng Provider Registry; Perspective Analyst và Judge không search.
+- Hai Scout search để tìm evidence; chỉ nhánh Provider Verification search thêm để kiểm tra đúng Provider Registry. Structured Source Warning Auditor, Perspective Analyst và Judge không search.
 - Không có grounding URL thì run dừng.
 - Mỗi nguồn có read status và audit có thể là incomplete.
-- Warning không có quote khớp excerpt phải bị downgrade.
-- Claim có quote không khớp excerpt bị coi là thiếu evidence và phải được Citation Auditor công khai.
-- Coverage thiếu nhóm không được hiển thị như coverage hoàn chỉnh.
+- Warning không có quote ≥20 ký tự khớp evidence passage phải bị downgrade.
+- Claim link có quote không hợp lệ bị loại; verdict thiếu loại evidence bắt buộc bị hạ về `unresolved/low`; source index ngoài packet phải được Citation Auditor ghi nhận.
+- Claim có verdict không phù hợp quan hệ support/contradiction bị hạ về `unresolved`; claim chủ động unresolved không bị tính thành lỗi citation chỉ vì chưa có evidence.
 - SSR không chứa API key hoặc dữ liệu nghiên cứu mẫu.
 - Unit/integration/SSR tests pass trên Node đáp ứng `>=22.13.0`.
 - Live Gemini E2E chỉ được coi là xác nhận khi chạy với key/quota thật; hiện chưa có xác nhận đó.

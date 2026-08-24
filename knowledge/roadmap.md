@@ -2,13 +2,17 @@
 
 ## Đã hoàn thành trong prototype
 
-- Hai Source Scout có chiến lược truy vấn khác nhau; tối đa 8 URL.
+- Hai Source Scout có chiến lược truy vấn khác nhau; gateway extract toàn bộ URL grounding duy nhất rồi final selector xen kẽ hai danh sách để chốt tối đa 8 nguồn.
 - Same-origin Gemini gateway có body/prompt/schema/token bounds, timeout và retry cho 429/5xx.
 - Public arbitrary source proxy đã được loại bỏ; gateway chỉ extract URL từ grounding metadata, với giới hạn redirect/timeout/bytes/content type.
 - `runLiveResearch` use case và ports đã tách khỏi React page.
 - JSON-encoded untrusted source packet.
-- Structured source audit: warning quote tối thiểu 20 ký tự, verification/downgrade, quote display và `machine-only` status.
-- Structured Claim Ledger với exact evidence quote, character locator, Coverage Matrix allowlisted/readable-only và citation gap status.
+- Evidence passages tách direct/grounding-support và giữ provenance khi cùng URL có cả hai loại.
+- Structured Perspective với source links, stakeholder, assumptions, omissions, strongest counterargument và blind spots định tính.
+- Provider Registry/Verification với một lượt Search mỗi provider và citation mapping theo URL.
+- Structured source audit: warning quote tối thiểu 20 ký tự, verification/downgrade, locator/provenance display và `machine-only` status.
+- Structured Claim Ledger với support/contradiction/context, exact quote ≥20 ký tự, character locator/provenance, verdict invariant và confidence cap cho grounding-only evidence.
+- Report ngắn được sinh riêng từ validated Claim Ledger, không lặp lại toàn bộ Provider/Warning.
 - Pure domain model/factories theo bounded context `research`.
 - Source-family service theo canonical URL, exact fingerprint và explicit upstream IDs.
 - D1 schema, indexes và migration đầu tiên.
@@ -33,6 +37,7 @@
 - Trích upstream link/byline/publisher/ownership/funding metadata.
 - Near-duplicate/fuzzy similarity và wire-copy detection; không gộp chỉ vì cùng publisher.
 - Query planner đa ngôn ngữ/địa lý và dedicated primary-source verifier.
+- Taxonomy/normalization tùy chọn cho Perspective ID nếu cần so sánh giữa nhiều run; hiện ID là nhãn model tự do.
 - Benchmark bias/framing/hate false positives và confidence calibration.
 - Scheduled re-check cho claim thay đổi theo thời gian.
 

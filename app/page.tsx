@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import { isRecord, normalizeAgentMarkdown } from "../lib/research-format";
 import {
   type ExtractedSourcePacket,
+  locateEvidenceQuote,
   type SourceAuditArtifact,
   type SourceWarningArtifact,
 } from "../application/research/pipeline-artifacts";
@@ -22,8 +23,7 @@ import {
   type SourceProviderProfile,
   type LiveResearchResult,
 } from "../application/research/run-live-research";
-import { ClaimLedger, CoverageMatrix, SourceAuditNotice, SourceWarningPanel, type CoverageRequirementView } from "../components/research-artifacts";
-import { buildCoverageGate } from "../application/research/source-intelligence";
+import { ClaimLedger, SourceAuditNotice, SourceWarningPanel } from "../components/research-artifacts";
 
 type Tab = "report" | "sources" | "log";
 type RunStatus = "idle" | "running" | "complete";
@@ -123,25 +123,27 @@ const CLAIM_TYPES = new Set(["empirical", "causal", "predictive", "interpretive"
 const CLAIM_VERDICTS = new Set(["supported", "mixed", "unsupported", "unresolved"]);
 const CONFIDENCE_LEVELS = new Set(["low", "medium", "high"]);
 const WARNING_CATEGORIES = new Set(["conflict-of-interest", "selection-bias", "methodology", "factual-reliability", "misinformation-risk", "propaganda-technique", "hostile-language", "political-framing", "recency", "geographic-scope", "provenance"]);
-const COVERAGE_CATEGORIES = ["primary", "claimant", "counterparty", "affected", "independent_expert", "local", "counterevidence"] as const;
 const REPUTATION_ASSESSMENTS = new Set(["established", "mixed", "limited-evidence", "unknown"]);
 
 function safeStrings(value: unknown, limit = 20): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim()).slice(0, limit) : [];
 }
 
-function parseStoredWarning(value: unknown, sourceExcerpt: string): SourceWarningArtifact | null {
+function parseStoredWarning(value: unknown, source: ExtractedSourcePacket): SourceWarningArtifact | null {
   if (!isRecord(value) || !WARNING_CATEGORIES.has(value.category as string) || typeof value.observableIndicator !== "string" || typeof value.evidenceQuote !== "string" || typeof value.evidenceVerified !== "boolean" || typeof value.confidenceReason !== "string" || typeof value.verificationHint !== "string") return null;
   if (!(value.severity === "info" || value.severity === "low" || value.severity === "medium" || value.severity === "high") || !CONFIDENCE_LEVELS.has(value.confidence as string)) return null;
+  const locatedEvidence = locateEvidenceQuote(source, value.evidenceQuote, 20);
+  const evidenceVerified = Boolean(locatedEvidence);
   return {
     category: value.category as SourceWarningArtifact["category"],
     observableIndicator: value.observableIndicator,
     evidenceQuote: value.evidenceQuote,
-    evidenceVerified: value.evidenceQuote.length >= 20 && sourceExcerpt.toLocaleLowerCase().includes(value.evidenceQuote.toLocaleLowerCase()),
+    evidenceVerified,
+    ...(locatedEvidence ? { evidenceLocator: locatedEvidence.locator, evidenceProvenance: locatedEvidence.provenance } : {}),
     alternativeExplanation: typeof value.alternativeExplanation === "string" ? value.alternativeExplanation : null,
-    severity: value.severity,
-    confidence: value.confidence as "low" | "medium" | "high",
-    confidenceReason: value.confidenceReason,
+    severity: evidenceVerified ? value.severity : "info",
+    confidence: evidenceVerified ? value.confidence as "low" | "medium" | "high" : "low",
+    confidenceReason: evidenceVerified ? value.confidenceReason : "Không tìm thấy nguyên văn bằng chứng trong evidence passages đã lưu; cần kiểm tra thủ công.",
     verificationHint: value.verificationHint,
     reviewStatus: "machine-only" as const,
   };
@@ -149,11 +151,8 @@ function parseStoredWarning(value: unknown, sourceExcerpt: string): SourceWarnin
 
 function parseStoredAudit(value: unknown, source: ExtractedSourcePacket): SourceAuditArtifact | undefined {
   if (!isRecord(value) || typeof value.sourceId !== "string" || typeof value.sourceIndex !== "number" || !Number.isInteger(value.sourceIndex) || typeof value.sourceType !== "string" || typeof value.stance !== "string" || !Array.isArray(value.warnings)) return undefined;
-  const warnings = value.warnings.map((warning) => parseStoredWarning(warning, source.excerpt)).filter((warning): warning is NonNullable<typeof warning> => warning !== null).slice(0, 8);
-  const coverageTags = source.fullTextStatus === "read" || source.fullTextStatus === "partial" || source.fullTextStatus === "grounded-support"
-    ? safeStrings(value.coverageTags, 7).filter((tag) => COVERAGE_CATEGORIES.includes(tag as typeof COVERAGE_CATEGORIES[number])).slice(0, 4)
-    : [];
-  return { sourceId: value.sourceId, sourceIndex: value.sourceIndex, sourceType: value.sourceType, stance: value.stance, stakeholderGroups: safeStrings(value.stakeholderGroups, 12), coverageTags, warnings };
+  const warnings = value.warnings.map((warning) => parseStoredWarning(warning, source)).filter((warning): warning is NonNullable<typeof warning> => warning !== null).slice(0, 8);
+  return { sourceId: value.sourceId, sourceIndex: value.sourceIndex, sourceType: value.sourceType, stance: value.stance, stakeholderGroups: safeStrings(value.stakeholderGroups, 12), warnings };
 }
 
 function parseStoredClaim(value: unknown, sources: Map<string, SourceIntelligence>): LiveResearchResult["claims"][number] | null {
@@ -161,19 +160,41 @@ function parseStoredClaim(value: unknown, sources: Map<string, SourceIntelligenc
   const citations = value.citations.flatMap((citation) => {
     if (!isRecord(citation) || typeof citation.sourceId !== "string" || typeof citation.quote !== "string") return [];
     const source = sources.get(citation.sourceId);
-    const quote = citation.quote.trim();
-    const characterIndex = source?.excerpt.toLocaleLowerCase().indexOf(quote.toLocaleLowerCase()) ?? -1;
-    return source && quote.length > 0 && characterIndex >= 0 ? [{ sourceId: source.id, locator: `${source.locator}, character ${characterIndex}`, quote, evidenceVerified: true as const }] : [];
+    const locatedEvidence = source ? locateEvidenceQuote(source, citation.quote, 20) : null;
+    const relationship = citation.relationship === "contradicts" || citation.relationship === "context" ? citation.relationship : "supports";
+    return source && locatedEvidence ? [{
+      relationship,
+      sourceId: source.id,
+      locator: locatedEvidence.locator,
+      quote: locatedEvidence.quote,
+      textMatchVerified: true as const,
+      provenance: locatedEvidence.provenance,
+    }] : [];
   }).slice(0, MAX_LIVE_SOURCES);
+  const requestedVerdict = value.verdict as LiveResearchResult["claims"][number]["verdict"];
+  const hasSupport = citations.some((citation) => citation.relationship === "supports");
+  const hasContradiction = citations.some((citation) => citation.relationship === "contradicts");
+  const verdictHasRequiredEvidence = requestedVerdict === "unresolved"
+    || (requestedVerdict === "supported" && hasSupport)
+    || (requestedVerdict === "unsupported" && hasContradiction)
+    || (requestedVerdict === "mixed" && hasSupport && hasContradiction);
+  const substantiveEvidence = citations.filter((citation) => citation.relationship !== "context");
+  const groundedOnly = substantiveEvidence.length > 0 && substantiveEvidence.every((citation) => citation.provenance === "grounding-support");
+  const requestedConfidence = value.confidence as "low" | "medium" | "high";
+  const confidenceReason = !verdictHasRequiredEvidence
+    ? `${value.confidenceReason} Verdict được hạ về unresolved khi hydrate vì thiếu evidence link hợp lệ.`
+    : groundedOnly && requestedConfidence === "high"
+      ? `${value.confidenceReason} Confidence được giới hạn ở medium vì chỉ có grounding-support model-generated.`
+      : value.confidenceReason;
   return {
     id: value.id,
     text: value.text,
     type: value.type as LiveResearchResult["claims"][number]["type"],
-    verdict: value.verdict as LiveResearchResult["claims"][number]["verdict"],
-    confidence: value.confidence as "low" | "medium" | "high",
-    confidenceReason: value.confidenceReason,
+    verdict: verdictHasRequiredEvidence ? requestedVerdict : "unresolved",
+    confidence: !verdictHasRequiredEvidence ? "low" : groundedOnly && requestedConfidence === "high" ? "medium" : requestedConfidence,
+    confidenceReason,
     citations,
-    contradictingSourceIds: safeStrings(value.contradictingSourceIds, MAX_LIVE_SOURCES).filter((id) => sources.has(id)),
+    contradictingSourceIds: Array.from(new Set(citations.filter((citation) => citation.relationship === "contradicts").map((citation) => citation.sourceId))),
     unresolvedQuestions: safeStrings(value.unresolvedQuestions, 12),
   };
 }
@@ -212,22 +233,31 @@ function parseResearch(value: unknown): GeminiResearch | null {
     if (!isRecord(source) || typeof source.id !== "string" || typeof source.title !== "string" || typeof source.url !== "string" || typeof source.excerpt !== "string" || typeof source.locator !== "string" || typeof source.familyId !== "string") return [];
     if (!(source.fullTextStatus === "read" || source.fullTextStatus === "partial" || source.fullTextStatus === "grounded-support" || source.fullTextStatus === "metadata-only" || source.fullTextStatus === "inaccessible")) return [];
     try { if (!allowedUrls.has(new URL(source.url).toString())) return []; } catch { return []; }
-    const base = { id: source.id, title: source.title, url: source.url, excerpt: source.excerpt.slice(0, 3_000), locator: source.locator, fullTextStatus: source.fullTextStatus } as const;
+    const evidencePassages = Array.isArray(source.evidencePassages) ? source.evidencePassages.flatMap((passage) => {
+      if (!isRecord(passage) || !(passage.kind === "direct" || passage.kind === "grounding-support") || typeof passage.text !== "string" || typeof passage.locator !== "string" || !passage.text.trim()) return [];
+      return [{ kind: passage.kind, text: passage.text.slice(0, 3_000), locator: passage.locator }];
+    }).slice(0, 2) : undefined;
+    const base = { id: source.id, title: source.title, url: source.url, excerpt: source.excerpt.slice(0, 3_000), locator: source.locator, fullTextStatus: source.fullTextStatus, ...(evidencePassages?.length ? { evidencePassages } : {}) } as const;
     const audit = parseStoredAudit(source.audit, base);
     return [{ ...base, familyId: source.familyId, ...(audit?.sourceId === source.id ? { audit } : {}) }];
   }).slice(0, MAX_LIVE_SOURCES);
-  const coverage = buildCoverageGate(sources.map((source) => ({ id: source.id, familyId: source.familyId, coverageTags: source.audit?.coverageTags || [] })), { requiredCategories: COVERAGE_CATEGORIES });
   const sourcesById = new Map(sources.map((source) => [source.id, source]));
   const knownSourceIds = new Set(sourcesById.keys());
   const sourceProviders = Array.isArray(value.sourceProviders)
     ? value.sourceProviders.map((provider) => parseStoredProvider(provider, knownSourceIds)).filter((provider): provider is SourceProviderProfile => provider !== null).slice(0, MAX_LIVE_SOURCES)
     : [];
-  const claims = value.claims.map((claim) => parseStoredClaim(claim, sourcesById)).filter((claim): claim is NonNullable<typeof claim> => claim !== null).slice(0, 12);
-  const claimIdsWithoutEvidence = claims.filter((claim) => claim.citations.length === 0).map((claim) => claim.id);
+  const seenClaimIds = new Set<string>();
+  const claims = value.claims.map((claim) => parseStoredClaim(claim, sourcesById)).filter((claim): claim is NonNullable<typeof claim> => {
+    if (!claim || !claim.id.trim() || !claim.text.trim() || seenClaimIds.has(claim.id)) return false;
+    seenClaimIds.add(claim.id);
+    return true;
+  }).slice(0, 6);
+  const claimIdsWithoutEvidence = claims.filter((claim) => claim.verdict !== "unresolved" && claim.citations.every((citation) => citation.relationship === "context")).map((claim) => claim.id);
+  const citedClaimCount = claims.filter((claim) => claim.citations.some((citation) => citation.relationship !== "context")).length;
   const citationAudit = {
     complete: claims.length > 0 && claimIdsWithoutEvidence.length === 0,
     materialClaimCount: claims.length,
-    citedClaimCount: claims.length - claimIdsWithoutEvidence.length,
+    citedClaimCount,
     claimIdsWithoutEvidence,
   };
   return {
@@ -238,7 +268,6 @@ function parseResearch(value: unknown): GeminiResearch | null {
     sources,
     sourceProviders,
     sourceAuditStatus: sources.length > 0 && sources.every((source) => source.audit) && sourceProviders.every((provider) => provider.assessment) ? "complete" : "incomplete",
-    coverage,
     claims,
     citationAudit,
   };
@@ -264,7 +293,7 @@ function parseResearchHistory(raw: string | null): ResearchHistoryItem[] {
 const waves = [
   ["Lập phạm vi", "Orchestrator · Query Planner"],
   ["Tìm nguồn đối trọng", "2 chiến lược truy vấn · tối đa 8 URL"],
-  ["Đọc & truy nguyên", "Server Extractor · Heuristic cluster · Coverage"],
+  ["Đọc & truy nguyên", "Server Extractor · Heuristic cluster"],
   ["Trích xuất luận điểm", "Perspective Analyst · Evidence packet"],
   ["Kiểm chứng cảnh báo", "Source Auditor · Provider verification + warning evidence"],
   ["Phán quyết bằng chứng", "Evidence Judge"],
@@ -286,6 +315,86 @@ function MarkdownContent({ children, compact = false }: { children: string; comp
   return <div className={`markdown-body ${compact ? "compact" : ""}`}>
     <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>{normalizeAgentMarkdown(children)}</ReactMarkdown>
   </div>;
+}
+
+function ProviderAndSourceAudit({ research }: { research: GeminiResearch }) {
+  const sourcesById = new Map(research.sources.map((source) => [source.id, source]));
+  const assignedSourceIds = new Set(research.sourceProviders.flatMap((provider) => provider.sourceIds));
+  const unassignedSources = research.sources.filter((source) => !assignedSourceIds.has(source.id));
+
+  function sourceAuditPanel(source: SourceIntelligence) {
+    let publisher = "Không rõ publisher";
+    try { publisher = new URL(source.url).hostname; } catch { /* URL đã được validate trước khi render */ }
+    return <SourceWarningPanel
+      key={source.id}
+      source={{
+        id: source.id,
+        title: source.title,
+        publisher,
+        url: source.url,
+        fullTextStatus: source.fullTextStatus,
+        ...(source.audit ? {
+          sourceType: source.audit.sourceType,
+          stance: source.audit.stance,
+          stakeholderGroups: source.audit.stakeholderGroups,
+        } : {}),
+      }}
+      warnings={(source.audit?.warnings || []).map((warning, index) => ({
+        id: `${source.id}-W${index + 1}`,
+        category: warning.category,
+        observableIndicator: warning.observableIndicator,
+        evidenceIds: warning.evidenceVerified ? [`${source.id}:${warning.evidenceLocator || source.locator}`] : [],
+        evidenceQuote: warning.evidenceVerified ? warning.evidenceQuote : undefined,
+        evidenceProvenance: warning.evidenceVerified ? warning.evidenceProvenance : undefined,
+        alternativeExplanation: warning.alternativeExplanation,
+        severity: warning.severity,
+        confidence: warning.confidence,
+        confidenceReason: warning.confidenceReason,
+        status: warning.reviewStatus,
+      }))}
+    />;
+  }
+
+  return <section className="content-card provider-source-audit" aria-labelledby="provider-source-audit-title">
+    <div className="section-title">
+      <div><span className="eyebrow">PROVIDER REGISTRY + SOURCE AUDIT</span><h2 id="provider-source-audit-title">Đơn vị cung cấp và cảnh báo nguồn</h2></div>
+      <small>{research.sourceProviders.length} đơn vị · {research.sources.length} nguồn · audit {research.sourceAuditStatus}</small>
+    </div>
+    <SourceAuditNotice />
+    <div className="agent-output-grid provider-audit-list">
+      {research.sourceProviders.map((provider) => {
+        const providerSources = Array.from(new Set(provider.sourceIds)).flatMap((sourceId) => {
+          const source = sourcesById.get(sourceId);
+          return source ? [source] : [];
+        });
+        const warningCount = providerSources.reduce((count, source) => count + (source.audit?.warnings.length || 0), 0);
+        return <details key={provider.id}>
+          <summary>
+            <span><b>{provider.name}</b><small>{provider.domain} · {providerSources.length} nguồn · {warningCount} warning</small></span>
+            <em>{provider.assessment?.reputationAssessment || "chưa đánh giá"}</em>
+          </summary>
+          <div className="provider-audit-body">
+            <div className="provider-profile">
+              <p><b>Được phát hiện bởi:</b> {provider.discoveredBy.join(" + ") || "Không rõ scout"}</p>
+              <p><b>Thiên hướng chính trị/biên tập:</b> {provider.assessment?.politicalOrientation || "Chưa xác định đủ bằng chứng"}</p>
+              <p><b>Ownership/affiliation:</b> {provider.assessment?.ownershipAndAffiliations.join("; ") || "Chưa có dữ liệu"}</p>
+              <p><b>Reputation signals:</b> {provider.assessment?.reputationSignals.join("; ") || "Chưa có dữ liệu"}</p>
+              {provider.assessment?.caveats.length ? <p><b>Caveat:</b> {provider.assessment.caveats.join("; ")}</p> : null}
+              {provider.assessment?.verificationCitations.length ? <p><b>Nguồn kiểm tra provider:</b> {provider.assessment.verificationCitations.map((citation, index) => <span key={`${citation.url}-${index}`}> {index > 0 ? " · " : ""}<a href={citation.url} target="_blank" rel="noreferrer">{citation.title}</a></span>)}</p> : null}
+            </div>
+            <div className="provider-source-list">
+              {providerSources.length ? providerSources.map(sourceAuditPanel) : <div className="empty-state">Provider này chưa liên kết với nguồn hợp lệ trong phiên.</div>}
+            </div>
+          </div>
+        </details>;
+      })}
+      {unassignedSources.length > 0 && <details>
+        <summary><span><b>Nguồn chưa gán provider</b><small>{unassignedSources.length} nguồn vẫn giữ nguyên audit</small></span><em>cần kiểm tra</em></summary>
+        <div className="provider-audit-body"><div className="provider-source-list">{unassignedSources.map(sourceAuditPanel)}</div></div>
+      </details>}
+      {research.sourceProviders.length === 0 && unassignedSources.length === 0 ? <div className="empty-state">Chưa có Provider Registry hoặc Source Audit.</div> : null}
+    </div>
+  </section>;
 }
 
 export default function Home() {
@@ -362,7 +471,7 @@ export default function Home() {
     replaceLogs(["Orchestrator · Tạo Research Brief live cho “" + clean + "”"]);
 
     try {
-      const { result } = await runLiveResearch(clean, {
+      const result = await runLiveResearch(clean, {
         callGemini: (request) => callGemini(apiKey, request),
         extractSources: async (citations, extractions) => mapGroundedSources(citations, extractions),
         setPhase,
@@ -473,17 +582,18 @@ export default function Home() {
             </nav>
 
             {tab === "report" && geminiResult && <div className="live-report view-stack">
-              <CoverageMatrix entries={Object.values(geminiResult.coverage.matrix).map((cell) => ({ requirement: ({ primary: "primary-source", claimant: "claimant", counterparty: "counterparty", affected: "affected-group", independent_expert: "independent-expert", local: "local-perspective", counterevidence: "direct-counterevidence" } as Record<string, CoverageRequirementView>)[cell.category], sourceIds: cell.sourceIds })).filter((entry) => Boolean(entry.requirement))} coverageRatio={(7 - geminiResult.coverage.missingCategories.length) / 7} complete={geminiResult.coverage.passed} auditComplete={geminiResult.sourceAuditStatus === "complete"} />
-              <section className="content-card report-paper"><div className="section-title"><div><span className="eyebrow">EVIDENCE JUDGE · {geminiResult.model}</span><h2>Báo cáo nghiên cứu có Google Search grounding</h2></div><small>{geminiResult.citationAudit.complete ? "Claim Ledger citation check đạt" : `${geminiResult.citationAudit.claimIdsWithoutEvidence.length} claim còn thiếu quote kiểm chứng`}</small></div><MarkdownContent>{geminiResult.report}</MarkdownContent></section>
-              <ClaimLedger claims={geminiResult.claims.map((claim) => ({ ...claim, supportingEvidenceIds: claim.citations.map((citation) => `${citation.sourceId}:${citation.locator}`), contradictingEvidenceIds: claim.contradictingSourceIds }))} />
+              <section className="content-card report-paper"><div className="section-title"><div><span className="eyebrow">EVIDENCE JUDGE · {geminiResult.model}</span><h2>Báo cáo nghiên cứu có Google Search grounding</h2></div><small>{geminiResult.citationAudit.complete ? "Claim Ledger đã kiểm tra · report là phần diễn giải" : `${geminiResult.citationAudit.claimIdsWithoutEvidence.length} claim đã kết luận còn thiếu quote kiểm chứng`}</small></div><MarkdownContent>{geminiResult.report}</MarkdownContent></section>
+              <ClaimLedger claims={geminiResult.claims.map((claim) => ({
+                ...claim,
+                supportingEvidenceIds: claim.citations.filter((citation) => citation.relationship === "supports").map((citation) => `${citation.sourceId}:${citation.locator}`),
+                contradictingEvidenceIds: claim.citations.filter((citation) => citation.relationship === "contradicts").map((citation) => `${citation.sourceId}:${citation.locator}`),
+              }))} />
               <section className="content-card"><div className="section-title"><div><span className="eyebrow">ANALYSIS ROLES</span><h2>Các vai trò phân tích</h2></div><small>Khác vai trò không đồng nghĩa độc lập model hoặc độc lập dữ liệu.</small></div><div className="agent-output-grid">{geminiResult.agents.map((agent) => <details key={agent.name}><summary><span><b>{agent.name}</b><small>{agent.role}</small></span><em>{agent.citations.length} URL trong tập làm việc</em></summary><div><MarkdownContent compact>{normalizeAgentMarkdown(agent.text)}</MarkdownContent></div></details>)}</div></section>
+              <ProviderAndSourceAudit research={geminiResult} />
             </div>}
 
             {tab === "sources" && geminiResult && <div className="view-stack">
               <section className="content-card"><div className="section-title"><div><span className="eyebrow">PROVENANCE REGISTRY</span><h2>Nguồn và cụm provenance sơ bộ</h2></div><small>{geminiResult.sources.length} URL · {new Set(geminiResult.sources.map((source) => source.familyId)).size} cụm heuristic · audit {geminiResult.sourceAuditStatus}</small></div><div className="grounded-source-list">{geminiResult.sources.map((source,index) => <article className="source-entry" key={source.id}><a href={source.url} target="_blank" rel="noreferrer" title={`Mở nguồn: ${source.title}`}><span>{String(index+1).padStart(2,"0")}</span><div><b>{source.title}</b><small>{source.url}</small></div><em>{source.fullTextStatus} · {provenanceClusterLabel(geminiResult.sources, source.familyId)}</em></a></article>)}</div></section>
-              <section className="content-card"><div className="section-title"><div><span className="eyebrow">PROVIDER REGISTRY</span><h2>Đơn vị cung cấp thông tin</h2></div><small>{(geminiResult.sourceProviders || []).length} đơn vị · kiểm tra bằng Google Search grounding</small></div><div className="agent-output-grid">{(geminiResult.sourceProviders || []).map((provider) => <details key={provider.id}><summary><span><b>{provider.name}</b><small>{provider.sourceIds.join(", ")} · {provider.discoveredBy.join(" + ") || "không rõ scout"}</small></span><em>{provider.assessment?.reputationAssessment || "chưa đánh giá"}</em></summary><div><p><b>Thiên hướng chính trị/biên tập:</b> {provider.assessment?.politicalOrientation || "Chưa xác định đủ bằng chứng"}</p><p><b>Ownership/affiliation:</b> {provider.assessment?.ownershipAndAffiliations.join("; ") || "Chưa có dữ liệu"}</p><p><b>Reputation signals:</b> {provider.assessment?.reputationSignals.join("; ") || "Chưa có dữ liệu"}</p>{provider.assessment?.caveats.length ? <p><b>Caveat:</b> {provider.assessment.caveats.join("; ")}</p> : null}{provider.assessment?.verificationCitations.length ? <p><b>Nguồn kiểm tra:</b> {provider.assessment.verificationCitations.map((citation, index) => <span key={citation.url}> {index > 0 ? " · " : ""}<a href={citation.url} target="_blank" rel="noreferrer">{citation.title}</a></span>)}</p> : null}</div></details>)}</div></section>
-              <SourceAuditNotice />
-              {geminiResult.sources.map((source) => <SourceWarningPanel key={source.id} source={{ id: source.id, title: source.title, publisher: (() => { try { return new URL(source.url).hostname; } catch { return "Không rõ publisher"; } })(), url: source.url, fullTextStatus: source.fullTextStatus }} warnings={(source.audit?.warnings || []).map((warning, index) => ({ id: `${source.id}-W${index + 1}`, category: warning.category, observableIndicator: warning.observableIndicator, evidenceIds: warning.evidenceVerified ? [`${source.id}:${source.locator}`] : [], evidenceQuote: warning.evidenceVerified ? warning.evidenceQuote : undefined, alternativeExplanation: warning.alternativeExplanation, severity: warning.severity, confidence: warning.confidence, confidenceReason: warning.confidenceReason, status: warning.reviewStatus }))} />)}
             </div>}
 
             {tab === "log" && <section className="content-card log-list"><div className="section-title"><div><span className="eyebrow">APPEND-ONLY LOG</span><h2>Nhật ký điều phối</h2></div></div>{logs.map((log,index) => <div key={`${log}-${index}`}><span>{String(logs.length-index).padStart(2,"0")}</span><p>{log}</p><small>{index === 0 ? "vừa xong" : `${index + 1} bước trước`}</small></div>)}</section>}

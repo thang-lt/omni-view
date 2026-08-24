@@ -88,27 +88,3 @@ export interface WarningRecord {
   readonly confidenceReason: string;
   readonly status: WarningStatus;
 }
-
-export const REQUIRED_COVERAGE = [
-  "primary-source",
-  "claimant",
-  "counterparty",
-  "affected-group",
-  "independent-expert",
-  "local-perspective",
-  "direct-counterevidence",
-] as const;
-export type CoverageRequirement = (typeof REQUIRED_COVERAGE)[number];
-
-export interface CoverageEntry {
-  readonly requirement: CoverageRequirement;
-  readonly sourceIds: readonly string[];
-}
-
-export interface CoverageReport {
-  readonly entries: readonly CoverageEntry[];
-  readonly metRequirements: readonly CoverageRequirement[];
-  readonly missingRequirements: readonly CoverageRequirement[];
-  readonly coverageRatio: number;
-  readonly complete: boolean;
-}

@@ -109,7 +109,6 @@ CREATE TABLE `sources` (
 	`language` text,
 	`source_type` text NOT NULL,
 	`stakeholder_groups` text NOT NULL,
-	`coverage_tags` text NOT NULL,
 	`upstream_source_ids` text NOT NULL,
 	`full_text_status` text NOT NULL,
 	`ownership` text,

@@ -109,44 +109,6 @@ export function clusterSourceFamilies(sources: readonly SourceForClustering[]): 
     .sort((left, right) => left.sourceIds[0].localeCompare(right.sourceIds[0]));
 }
 
-export type CoverageSource = {
-  id: string;
-  familyId?: string | null;
-  coverageTags: readonly string[];
-};
-
-export type CoverageGateOptions = {
-  requiredCategories: readonly string[];
-  minimumFamiliesPerCategory?: number;
-};
-
-export type CoverageCell = {
-  category: string;
-  sourceIds: string[];
-  familyIds: string[];
-  independentFamilyCount: number;
-  satisfied: boolean;
-};
-
-export function buildCoverageGate(sources: readonly CoverageSource[], options: CoverageGateOptions) {
-  const minimum = Math.max(1, Math.floor(options.minimumFamiliesPerCategory ?? 1));
-  const matrix: Record<string, CoverageCell> = {};
-  for (const category of Array.from(new Set(options.requiredCategories))) {
-    const matching = sources.filter((source) => source.coverageTags.includes(category));
-    const sourceIds = matching.map((source) => source.id).sort();
-    const familyIds = Array.from(new Set(matching.map((source) => source.familyId?.trim() || `source:${source.id}`))).sort();
-    matrix[category] = {
-      category,
-      sourceIds,
-      familyIds,
-      independentFamilyCount: familyIds.length,
-      satisfied: familyIds.length >= minimum,
-    };
-  }
-  const missingCategories = Object.values(matrix).filter((cell) => !cell.satisfied).map((cell) => cell.category);
-  return { passed: missingCategories.length === 0, minimumFamiliesPerCategory: minimum, missingCategories, matrix };
-}
-
 export type ClaimCitation = { sourceId?: string | null; locator?: string | null };
 export type ClaimForCitationAudit = { id: string; isMaterial?: boolean; citations?: readonly ClaimCitation[] };
 export type CitationAuditFinding = {

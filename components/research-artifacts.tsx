@@ -1,62 +1,3 @@
-export type CoverageRequirementView =
-  | "primary-source"
-  | "claimant"
-  | "counterparty"
-  | "affected-group"
-  | "independent-expert"
-  | "local-perspective"
-  | "direct-counterevidence";
-
-export interface CoverageEntryView {
-  readonly requirement: CoverageRequirementView;
-  readonly sourceIds: readonly string[];
-}
-
-export interface CoverageMatrixProps {
-  readonly entries: readonly CoverageEntryView[];
-  readonly coverageRatio: number;
-  readonly complete: boolean;
-  readonly auditComplete?: boolean;
-}
-
-const COVERAGE_LABELS: Record<CoverageRequirementView, string> = {
-  "primary-source": "Nguồn sơ cấp",
-  claimant: "Bên đưa ra luận điểm",
-  counterparty: "Bên phản biện/đối lập",
-  "affected-group": "Nhóm chịu tác động",
-  "independent-expert": "Chuyên gia độc lập",
-  "local-perspective": "Góc nhìn địa phương",
-  "direct-counterevidence": "Phản chứng trực tiếp",
-};
-
-export function CoverageMatrix({ entries, coverageRatio, complete, auditComplete = true }: CoverageMatrixProps) {
-  const safeRatio = Math.min(1, Math.max(0, coverageRatio));
-  const percentage = Math.round(safeRatio * 100);
-  const coveredCount = entries.filter((entry) => entry.sourceIds.length > 0).length;
-
-  return <section className="content-card coverage-matrix" aria-labelledby="coverage-matrix-title">
-    <div className="section-title">
-      <div><span className="eyebrow">COVERAGE GATE</span><h2 id="coverage-matrix-title">Ma trận độ phủ góc nhìn</h2></div>
-      <small>{!auditComplete ? "Audit nguồn chưa đầy đủ; số liệu bên dưới chỉ là phần đã xác nhận" : complete ? "Đã có đại diện cho mọi nhóm bắt buộc" : "Còn khoảng trống; kết quả không nên được xem là đầy đủ"}</small>
-    </div>
-    <div className="coverage-overview"><b>{percentage}%</b><span>{coveredCount}/{entries.length || 7} nhóm có nguồn đã xác nhận</span></div>
-    <div className="meter" role="progressbar" aria-label="Tỷ lệ nhóm góc nhìn đã có nguồn" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percentage}>
-      <i style={{ width: `${safeRatio * 100}%` }} />
-    </div>
-    {!auditComplete && <div className="coverage-data-warning">Đây không phải lỗi chart: Source Auditor chưa trả đủ dữ liệu hợp lệ. Nhóm chưa xác nhận được giữ ở trạng thái “Thiếu”, không được tự suy đoán.</div>}
-    {entries.length === 0
-      ? <div className="empty-state">Chưa có dữ liệu coverage.</div>
-      : entries.map((entry) => {
-        const covered = entry.sourceIds.length > 0;
-        return <div className="coverage-row" key={entry.requirement}>
-          <span>{COVERAGE_LABELS[entry.requirement]}</span>
-          <span className="meter" aria-hidden="true"><i style={{ width: covered ? "100%" : "0%" }} /></span>
-          <b>{covered ? entry.sourceIds.length : "Thiếu"}</b>
-        </div>;
-      })}
-  </section>;
-}
-
 export type ClaimVerdictView = "supported" | "mixed" | "unsupported" | "unresolved";
 export type ConfidenceView = "low" | "medium" | "high";
 
@@ -130,6 +71,7 @@ export interface SourceWarningView {
   readonly observableIndicator: string;
   readonly evidenceIds: readonly string[];
   readonly evidenceQuote?: string;
+  readonly evidenceProvenance?: "direct" | "grounding-support";
   readonly alternativeExplanation: string | null;
   readonly severity: "info" | "low" | "medium" | "high";
   readonly confidence: ConfidenceView;
@@ -143,6 +85,9 @@ export interface WarningSourceView {
   readonly publisher: string;
   readonly url?: string;
   readonly fullTextStatus?: "read" | "partial" | "grounded-support" | "metadata-only" | "inaccessible" | "blocked";
+  readonly sourceType?: string;
+  readonly stance?: string;
+  readonly stakeholderGroups?: readonly string[];
 }
 
 export interface SourceWarningPanelProps {
@@ -178,18 +123,24 @@ export function SourceAuditNotice() {
 }
 
 export function SourceWarningPanel({ source, warnings }: SourceWarningPanelProps) {
-  return <section className="content-card source-warning-panel" aria-labelledby={`source-warning-${source.id}`}>
+  return <section className="source-warning-panel" aria-labelledby={`source-warning-${source.id}`}>
     <div className="section-title">
       <div><span className="eyebrow">SOURCE AUDIT</span><h2 id={`source-warning-${source.id}`}>{source.title}</h2><small>{source.publisher}</small></div>
       <small>{source.fullTextStatus ? `Mức đọc nội dung: ${source.fullTextStatus}` : "Chưa rõ mức đọc toàn văn"}</small>
     </div>
     {source.url && <p className="source-warning-link"><a href={source.url} target="_blank" rel="noreferrer">Mở nguồn gốc ↗</a></p>}
+    {(source.sourceType || source.stance || source.stakeholderGroups?.length) && <div className="source-audit-metadata">
+      {source.sourceType && <span><b>Loại nguồn</b>{source.sourceType}</span>}
+      {source.stance && <span><b>Lập trường</b>{source.stance}</span>}
+      {source.stakeholderGroups?.length ? <span><b>Stakeholder</b>{source.stakeholderGroups.join(", ")}</span> : null}
+    </div>}
     {warnings.length === 0
       ? <div className="source-audit-clear"><b>Không ghi nhận warning có evidence</b><span>Trong phần nội dung hệ thống đọc được của phiên này.</span></div>
       : <div className="audit-grid">{warnings.map((warning) => <article className={`audit-card ${warning.severity}`} key={warning.id}>
         <div><b>{WARNING_CATEGORY_LABELS[warning.category]}</b><span>{AUDIT_STATUS_LABELS[warning.status]}</span></div>
         <p>{warning.observableIndicator}</p>
         {warning.evidenceQuote && <blockquote><p>“{warning.evidenceQuote}”</p></blockquote>}
+        {warning.evidenceProvenance && <small>{warning.evidenceProvenance === "direct" ? "Quote khớp nội dung đọc trực tiếp" : "Quote khớp grounding-support model-generated, không phải nguyên văn trang nguồn"}</small>}
         <small>{warning.evidenceIds.length} đoạn evidence · Độ chắc của cảnh báo: {CONFIDENCE_LABELS[warning.confidence]}</small>
         {warning.alternativeExplanation && <div className="note-box"><b>Giải thích thay thế</b><p>{warning.alternativeExplanation}</p></div>}
         <p className="confidence-note"><b>Lý do mức chắc:</b> {warning.confidenceReason}</p>

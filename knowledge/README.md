@@ -21,16 +21,21 @@ Thư mục này là điểm bắt đầu để hiểu, phát triển và kiểm 
 Ưu tiên khi tài liệu và code mâu thuẫn:
 
 1. Hành vi runtime đã kiểm tra được.
-2. Source trong `app/`, `worker/`, `db/` và cấu hình build.
+2. Source trong `app/`, `application/`, `domain/`, `infrastructure/`, `components/`, `worker/`, `db/` và cấu hình build.
 3. Các tài liệu trong `knowledge/`.
 4. Thiết kế nền ban đầu tại `work/MULTI_AGENT_RESEARCH_DESIGN.md`.
 
-Các tài liệu trong thư mục này mô tả snapshot được quét ngày **2026-08-18**.
+Các tài liệu trong thư mục này mô tả snapshot được quét ngày **2026-08-23**.
 
 ## Thuật ngữ
 
 - **Live-only mode:** pipeline chỉ gọi Gemini API bằng key người dùng nhập trong browser; không có dữ liệu fallback.
 - **Grounding source:** URL nằm trong `groundingMetadata` do Gemini trả về.
+- **Direct passage:** excerpt được Server Extractor đọc từ trang nguồn.
+- **Grounding-support passage:** nội dung model-generated trong `groundingSupports` được Search liên kết với URL; không phải nguyên văn trang nguồn.
 - **Source family:** các tài liệu cùng phụ thuộc một nguồn gốc/upstream evidence.
+- **Provider:** đơn vị xuất bản/cung cấp thông tin, hiện được registry theo domain.
+- **Perspective ID:** nhãn chuỗi tự do do model đặt cho một góc nhìn; không phải taxonomy cố định hoặc thang uy tín.
 - **Claim:** mệnh đề nguyên tử có thể kiểm tra hoặc phân loại.
 - **Evidence Judge:** bước tổng hợp không bỏ phiếu theo số agent hoặc số URL.
+- **Source Warning:** tín hiệu máy về framing, bias, phương pháp, provenance hoặc factual-risk; không phải phán quyết cho cả nguồn.

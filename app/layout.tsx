@@ -10,11 +10,11 @@ export async function generateMetadata(): Promise<Metadata> {
 
   return {
     title: "Đa Chiều — Multi-Agent Research Desk",
-    description: "Thử nghiệm quy trình nghiên cứu đa nguồn, phân tích luận điểm và kiểm định bias bằng nhiều agent.",
+    description: "Research Desk đa nguồn dùng Gemini Search grounding, cảnh báo bias có evidence và Claim Ledger được kiểm tra trước khi viết báo cáo.",
     icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
     openGraph: {
       title: "Đa Chiều — Multi-Agent Research Desk",
-      description: "Nhiều nguồn. Ít điểm mù hơn.",
+      description: "Nguồn chính thống, phản chứng, cảnh báo bias có evidence và Claim Ledger truy nguyên được.",
       type: "website",
       url: origin,
       images: [{ url: `${origin}/og.png`, width: 1536, height: 1024, alt: "Đa Chiều — Multi-Agent Research Desk" }],

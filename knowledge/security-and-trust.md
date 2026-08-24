@@ -41,7 +41,7 @@ Việc bỏ public proxy giảm đáng kể bề mặt SSRF nhưng không chứn
 
 - Evidence packet JSON-encode toàn bộ source records bên trong `<UNTRUSTED_SOURCE_DATA_JSON>` để delimiter giả trong source không phá cấu trúc packet.
 - Prompt nhắc model bỏ instruction nằm trong nguồn.
-- Search chỉ được bật cho hai Scout; excerpt không thể tự cấp thêm tool.
+- Search evidence chỉ được bật cho hai Scout. Nhánh Provider Verification được Search riêng nhưng prompt/packet giới hạn vào Provider Registry và request này không extract thêm source evidence cho chủ đề. Perspective, structured Source Warning Auditor và Judge không Search.
 - Markdown dùng `react-markdown`, GFM và `skipHtml`; không dùng raw HTML.
 - Link nguồn mở với `noreferrer`.
 
@@ -51,9 +51,12 @@ Marker/prompt không loại bỏ hoàn toàn indirect prompt injection. Cần ev
 
 - Nhiều URL không đồng nghĩa nhiều họ bằng chứng.
 - Source-family live chỉ dựa trên exact signals; không nên gọi là provenance graph hoàn chỉnh.
-- Warning quote phải dài tối thiểu 20 ký tự; claim/warning citation chỉ dùng exact substring không phân biệt hoa thường. Đây vẫn chỉ là lexical verification.
+- Warning và claim quote phải dài tối thiểu 20 ký tự; citation chỉ dùng exact substring không phân biệt hoa thường trong passage trực tiếp hoặc grounding-support. Đây vẫn chỉ là lexical verification.
+- Claim citation khai báo `supports`, `contradicts` hoặc `context`; parser kiểm tra quan hệ tối thiểu theo verdict nhưng chưa chứng minh semantic entailment.
+- Grounding-support là model-generated, không phải nguyên văn trang; claim chỉ dựa vào loại evidence này bị giới hạn confidence ở `medium`.
 - Bias/framing không đồng nghĩa factual claim sai.
 - Political disagreement không tự động là hostility/disinformation.
+- Provider reputation/orientation là assessment cấp đơn vị, không quyết định độ đúng của một bài cụ thể; citation verification chỉ được map vào provider tương ứng.
 - Tất cả warnings live là `machine-only`; chưa có human approval.
 - Claim citation có quote và character offset trong excerpt, nhưng chưa phải locator bền vững trong tài liệu gốc và chưa đủ cho quyết định high-stakes.
 

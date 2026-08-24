@@ -7,6 +7,13 @@ export type ExtractedSourcePacket = {
   excerpt: string;
   locator: string;
   fullTextStatus: "read" | "partial" | "grounded-support" | "metadata-only" | "inaccessible";
+  evidencePassages?: EvidencePassage[];
+};
+
+export type EvidencePassage = {
+  kind: "direct" | "grounding-support";
+  text: string;
+  locator: string;
 };
 
 export type WarningCategory =
@@ -27,6 +34,8 @@ export type SourceWarningArtifact = {
   observableIndicator: string;
   evidenceQuote: string;
   evidenceVerified: boolean;
+  evidenceLocator?: string;
+  evidenceProvenance?: EvidencePassage["kind"];
   alternativeExplanation: string | null;
   severity: "info" | "low" | "medium" | "high";
   confidence: "low" | "medium" | "high";
@@ -41,7 +50,6 @@ export type SourceAuditArtifact = {
   sourceType: string;
   stance: string;
   stakeholderGroups: string[];
-  coverageTags: string[];
   warnings: SourceWarningArtifact[];
 };
 
@@ -80,6 +88,20 @@ export type ParsedSourceAuditArtifact = {
   missingProviderIds: string[];
 };
 
+export type PerspectiveArtifact = {
+  perspectives: Array<{
+    id: string;
+    thesis: string;
+    sourceIds: string[];
+    stakeholderGroups: string[];
+    assumptions: string[];
+    omissions: string[];
+    strongestCounterargument: string;
+  }>;
+  blindSpots: string[];
+  markdown: string;
+};
+
 export type ClaimArtifact = {
   id: string;
   text: string;
@@ -87,7 +109,14 @@ export type ClaimArtifact = {
   verdict: "supported" | "mixed" | "unsupported" | "unresolved";
   confidence: "low" | "medium" | "high";
   confidenceReason: string;
-  citations: Array<{ sourceId: string; locator: string; quote: string; evidenceVerified: true }>;
+  citations: Array<{
+    relationship: "supports" | "contradicts" | "context";
+    sourceId: string;
+    locator: string;
+    quote: string;
+    textMatchVerified: true;
+    provenance: EvidencePassage["kind"];
+  }>;
   contradictingSourceIds: string[];
   unresolvedQuestions: string[];
 };
@@ -101,7 +130,6 @@ const LEVELS = new Set(["low", "medium", "high"]);
 const SEVERITIES = new Set(["info", "low", "medium", "high"]);
 const CLAIM_TYPES = new Set(["empirical", "causal", "predictive", "interpretive", "normative"]);
 const CLAIM_VERDICTS = new Set(["supported", "mixed", "unsupported", "unresolved"]);
-const COVERAGE_TAGS = new Set(["primary", "claimant", "counterparty", "affected", "independent_expert", "local", "counterevidence"]);
 const REPUTATION_ASSESSMENTS = new Set(["established", "mixed", "limited-evidence", "unknown"]);
 
 function strings(value: unknown, limit = 12): string[] {
@@ -118,6 +146,33 @@ function integerIndexes(value: unknown): number[] {
   return Array.from(new Set(value.filter((item): item is number => typeof item === "number" && Number.isInteger(item))));
 }
 
+export function evidencePassagesForSource(source: ExtractedSourcePacket): EvidencePassage[] {
+  const passages = (source.evidencePassages || []).filter((passage) => passage.text.trim().length > 0);
+  if (passages.length > 0) return passages;
+  if (!source.excerpt.trim()) return [];
+  return [{
+    kind: source.fullTextStatus === "grounded-support" ? "grounding-support" : "direct",
+    text: source.excerpt,
+    locator: source.locator,
+  }];
+}
+
+export function locateEvidenceQuote(source: ExtractedSourcePacket, rawQuote: string, minimumLength = 1) {
+  const quote = rawQuote.trim();
+  if (quote.length < minimumLength) return null;
+  for (const passage of evidencePassagesForSource(source)) {
+    const characterIndex = passage.text.toLocaleLowerCase().indexOf(quote.toLocaleLowerCase());
+    if (characterIndex >= 0) {
+      return {
+        quote,
+        locator: `${passage.locator}, character ${characterIndex}`,
+        provenance: passage.kind,
+      } as const;
+    }
+  }
+  return null;
+}
+
 function verifiedClaimCitations(value: unknown, sources: ExtractedSourcePacket[], invalidIndexes: Set<number>): ClaimArtifact["citations"] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item): ClaimArtifact["citations"] => {
@@ -127,10 +182,17 @@ function verifiedClaimCitations(value: unknown, sources: ExtractedSourcePacket[]
       invalidIndexes.add(item.sourceIndex);
       return [];
     }
-    const quote = item.quote.trim();
-    const characterIndex = source.excerpt.toLocaleLowerCase().indexOf(quote.toLocaleLowerCase());
-    if (!quote || characterIndex < 0) return [];
-    return [{ sourceId: source.id, locator: `${source.locator}, character ${characterIndex}`, quote, evidenceVerified: true }];
+    const locatedEvidence = locateEvidenceQuote(source, item.quote, 20);
+    if (!locatedEvidence) return [];
+    const relationship = item.relationship === "contradicts" || item.relationship === "context" ? item.relationship : "supports";
+    return [{
+      relationship,
+      sourceId: source.id,
+      locator: locatedEvidence.locator,
+      quote: locatedEvidence.quote,
+      textMatchVerified: true,
+      provenance: locatedEvidence.provenance,
+    }];
   });
 }
 
@@ -141,10 +203,45 @@ export function buildEvidencePacket(sources: ExtractedSourcePacket[], sourceInde
     title: source.title,
     url: source.url,
     fullTextStatus: source.fullTextStatus,
-    locator: source.locator,
-    content: source.excerpt || "[Không có nội dung đã trích xuất]",
+    evidencePassages: evidencePassagesForSource(source).map((passage) => ({
+      kind: passage.kind,
+      locator: passage.locator,
+      content: passage.text,
+    })),
   }));
   return `<UNTRUSTED_SOURCE_DATA_JSON>\n${JSON.stringify({ untrustedSources })}\n</UNTRUSTED_SOURCE_DATA_JSON>`;
+}
+
+export function parsePerspectiveArtifact(raw: string, sources: ExtractedSourcePacket[]): PerspectiveArtifact {
+  const parsed = parseJsonEnvelope(raw);
+  const perspectives = (parsed && Array.isArray(parsed.perspectives) ? parsed.perspectives : []).flatMap((item, index) => {
+    if (!isRecord(item)) return [];
+    const thesis = text(item.thesis);
+    if (!thesis) return [];
+    const sourceIds = integerIndexes(item.sourceIndexes).flatMap((sourceIndex) => sources[sourceIndex - 1]?.id ? [sources[sourceIndex - 1].id] : []);
+    return [{
+      id: text(item.id, `V${index + 1}`),
+      thesis,
+      sourceIds: Array.from(new Set(sourceIds)),
+      stakeholderGroups: strings(item.stakeholderGroups, 6),
+      assumptions: strings(item.assumptions, 5),
+      omissions: strings(item.omissions, 5),
+      strongestCounterargument: text(item.strongestCounterargument, "Chưa có phản biện đủ dữ liệu."),
+    }];
+  }).slice(0, 4);
+  const blindSpots = strings(parsed?.blindSpots, 6);
+  const markdown = [
+    ...perspectives.map((perspective) => [
+      `### ${perspective.id} · ${perspective.thesis}`,
+      `- **Nguồn liên quan:** ${perspective.sourceIds.join(", ") || "Chưa có nguồn hợp lệ"}`,
+      `- **Stakeholder:** ${perspective.stakeholderGroups.join(", ") || "Chưa xác định"}`,
+      `- **Giả định:** ${perspective.assumptions.join("; ") || "Chưa xác định"}`,
+      `- **Điểm có thể bị bỏ sót:** ${perspective.omissions.join("; ") || "Chưa xác định"}`,
+      `- **Phản biện mạnh nhất:** ${perspective.strongestCounterargument}`,
+    ].join("\n")),
+    blindSpots.length ? `### Điểm mù còn lại\n${blindSpots.map((gap) => `- ${gap}`).join("\n")}` : "",
+  ].filter(Boolean).join("\n\n");
+  return { perspectives, blindSpots, markdown };
 }
 
 export function mergeSourceAuditArtifacts(
@@ -193,7 +290,8 @@ function parseWarning(value: unknown, source: ExtractedSourcePacket): SourceWarn
   const verificationHint = text(value.verificationHint);
   if (!category || !observableIndicator || !verificationHint) return null;
 
-  const evidenceVerified = evidenceQuote.length >= 20 && source.excerpt.toLocaleLowerCase().includes(evidenceQuote.toLocaleLowerCase());
+  const locatedEvidence = locateEvidenceQuote(source, evidenceQuote, 20);
+  const evidenceVerified = Boolean(locatedEvidence);
   const requestedConfidence = LEVELS.has(value.confidence as string) ? value.confidence as "low" | "medium" | "high" : "low";
   const requestedSeverity = SEVERITIES.has(value.severity as string) ? value.severity as "info" | "low" | "medium" | "high" : "info";
   return {
@@ -201,6 +299,7 @@ function parseWarning(value: unknown, source: ExtractedSourcePacket): SourceWarn
     observableIndicator,
     evidenceQuote,
     evidenceVerified,
+    ...(locatedEvidence ? { evidenceLocator: locatedEvidence.locator, evidenceProvenance: locatedEvidence.provenance } : {}),
     alternativeExplanation: typeof value.alternativeExplanation === "string" && value.alternativeExplanation.trim() ? value.alternativeExplanation.trim() : null,
     severity: evidenceVerified ? requestedSeverity : "info",
     confidence: evidenceVerified ? requestedConfidence : "low",
@@ -231,9 +330,6 @@ export function parseSourceAuditArtifact(raw: string, sources: ExtractedSourcePa
       sourceType: text(item.sourceType, "unknown"),
       stance: text(item.stance, "unclear"),
       stakeholderGroups: strings(item.stakeholderGroups),
-      coverageTags: source.fullTextStatus === "read" || source.fullTextStatus === "partial" || source.fullTextStatus === "grounded-support"
-        ? strings(item.coverageTags).filter((tag) => COVERAGE_TAGS.has(tag)).slice(0, 4)
-        : [],
       warnings,
     });
   }
@@ -249,6 +345,8 @@ export function parseSourceAuditArtifact(raw: string, sources: ExtractedSourcePa
     const reputationAssessment = REPUTATION_ASSESSMENTS.has(item.reputationAssessment as string)
       ? item.reputationAssessment as ProviderAssessmentArtifact["reputationAssessment"]
       : "unknown";
+    const allowedVerificationCitations = new Map((context.verificationCitations || []).map((citation) => [citation.url, citation]));
+    const requestedVerificationUrls = strings(item.verificationCitationUrls, 8);
     return [{
       providerId: provider.id,
       providerName: provider.name,
@@ -257,13 +355,16 @@ export function parseSourceAuditArtifact(raw: string, sources: ExtractedSourcePa
       ownershipAndAffiliations: strings(item.ownershipAndAffiliations, 8),
       reputationSignals: strings(item.reputationSignals, 8),
       caveats: strings(item.caveats, 8),
-      verificationCitations: Array.from(new Map((context.verificationCitations || []).map((citation) => [citation.url, citation])).values()).slice(0, 8),
+      verificationCitations: requestedVerificationUrls.flatMap((url) => {
+        const citation = allowedVerificationCitations.get(url);
+        return citation ? [citation] : [];
+      }),
       reviewStatus: "machine-only",
     }];
   });
   const missingProviderIds = Array.from(providerById.keys()).filter((providerId) => !providerAssessments.some((assessment) => assessment.providerId === providerId));
   return {
-    analysisMarkdown: normalizeAgentMarkdown(parsed && typeof parsed.analysisMarkdown === "string" ? parsed.analysisMarkdown : raw),
+    analysisMarkdown: normalizeAgentMarkdown(parsed ? typeof parsed.analysisMarkdown === "string" ? parsed.analysisMarkdown : "" : raw),
     sourceAudits: Array.from(byIndex.values()).sort((a, b) => a.sourceIndex - b.sourceIndex),
     providerAssessments,
     status: missingSourceIndexes.length === 0 && duplicateSourceIndexes.length === 0 && missingProviderIds.length === 0 ? "complete" : "incomplete",
@@ -277,25 +378,52 @@ export function parseJudgeArtifact(raw: string, sources: ExtractedSourcePacket[]
   const parsed = parseJsonEnvelope(raw);
   const rawClaims = parsed && Array.isArray(parsed.claims) ? parsed.claims : [];
   const invalidIndexes = new Set<number>();
+  const seenClaimIds = new Set<string>();
   const claims: ClaimArtifact[] = rawClaims.flatMap((item): ClaimArtifact[] => {
     if (!isRecord(item) || typeof item.id !== "string" || typeof item.text !== "string") return [];
-    const supportIndexes = integerIndexes(item.evidenceSourceIndexes);
-    const contradictingIndexes = integerIndexes(item.contradictingSourceIndexes);
-    for (const index of [...supportIndexes, ...contradictingIndexes]) if (!sources[index - 1]) invalidIndexes.add(index);
-    const citations = verifiedClaimCitations(item.evidenceQuotes, sources, invalidIndexes);
+    const id = item.id.trim();
+    const claimText = item.text.trim();
+    if (!id || !claimText || seenClaimIds.has(id)) return [];
+    seenClaimIds.add(id);
+    const legacyEvidenceLinks = Array.isArray(item.evidenceQuotes)
+      ? item.evidenceQuotes.map((link) => isRecord(link) ? { ...link, relationship: "supports" } : link)
+      : [];
+    const rawEvidenceLinks = Array.isArray(item.evidenceLinks) ? item.evidenceLinks : legacyEvidenceLinks;
+    for (const link of rawEvidenceLinks) {
+      if (isRecord(link) && typeof link.sourceIndex === "number" && Number.isInteger(link.sourceIndex) && !sources[link.sourceIndex - 1]) invalidIndexes.add(link.sourceIndex);
+    }
+    const citations = verifiedClaimCitations(rawEvidenceLinks, sources, invalidIndexes);
+    const hasSupport = citations.some((citation) => citation.relationship === "supports");
+    const hasContradiction = citations.some((citation) => citation.relationship === "contradicts");
+    const requestedVerdict = CLAIM_VERDICTS.has(item.verdict as string) ? item.verdict as ClaimArtifact["verdict"] : "unresolved";
+    const verdictHasRequiredEvidence = requestedVerdict === "unresolved"
+      || (requestedVerdict === "supported" && hasSupport)
+      || (requestedVerdict === "unsupported" && hasContradiction)
+      || (requestedVerdict === "mixed" && hasSupport && hasContradiction);
+    const verdict = verdictHasRequiredEvidence ? requestedVerdict : "unresolved";
+    const requestedConfidence = LEVELS.has(item.confidence as string) ? item.confidence as "low" | "medium" | "high" : "low";
+    const substantiveEvidence = citations.filter((citation) => citation.relationship !== "context");
+    const groundedOnly = substantiveEvidence.length > 0 && substantiveEvidence.every((citation) => citation.provenance === "grounding-support");
+    const confidence = !verdictHasRequiredEvidence ? "low" : groundedOnly && requestedConfidence === "high" ? "medium" : requestedConfidence;
+    const confidenceReason = !verdictHasRequiredEvidence
+      ? `${text(item.confidenceReason, "Chưa có đủ bằng chứng.")} Verdict được hạ về unresolved vì thiếu quote ${requestedVerdict === "mixed" ? "hỗ trợ hoặc phản chứng" : requestedVerdict === "unsupported" ? "phản chứng" : "hỗ trợ"} đã kiểm tra.`
+      : groundedOnly && requestedConfidence === "high"
+        ? `${text(item.confidenceReason, "Bằng chứng có grounding.")} Confidence được giới hạn ở medium vì chỉ có grounding-support model-generated.`
+        : text(item.confidenceReason, "Chưa có lý do confidence.");
     return [{
-      id: item.id.trim(),
-      text: item.text.trim(),
+      id,
+      text: claimText,
       type: CLAIM_TYPES.has(item.type as string) ? item.type as ClaimArtifact["type"] : "empirical",
-      verdict: CLAIM_VERDICTS.has(item.verdict as string) ? item.verdict as ClaimArtifact["verdict"] : "unresolved",
-      confidence: LEVELS.has(item.confidence as string) ? item.confidence as "low" | "medium" | "high" : "low",
-      confidenceReason: text(item.confidenceReason, "Chưa có lý do confidence."),
+      verdict,
+      confidence,
+      confidenceReason,
       citations,
-      contradictingSourceIds: contradictingIndexes.flatMap((index) => sources[index - 1]?.id ? [sources[index - 1].id] : []),
+      contradictingSourceIds: Array.from(new Set(citations.filter((citation) => citation.relationship === "contradicts").map((citation) => citation.sourceId))),
       unresolvedQuestions: strings(item.unresolvedQuestions),
     }];
   });
-  const claimIdsWithoutEvidence = claims.filter((claim) => claim.citations.length === 0).map((claim) => claim.id);
+  const claimIdsWithoutEvidence = claims.filter((claim) => claim.verdict !== "unresolved" && claim.citations.every((citation) => citation.relationship === "context")).map((claim) => claim.id);
+  const citedClaimCount = claims.filter((claim) => claim.citations.some((citation) => citation.relationship !== "context")).length;
   const reportInput = parsed
     ? typeof parsed.reportMarkdown === "string" ? parsed.reportMarkdown : ""
     : raw;
@@ -306,7 +434,7 @@ export function parseJudgeArtifact(raw: string, sources: ExtractedSourcePacket[]
     citationAudit: {
       complete: claims.length > 0 && claimIdsWithoutEvidence.length === 0 && invalidIndexes.size === 0,
       materialClaimCount: claims.length,
-      citedClaimCount: claims.length - claimIdsWithoutEvidence.length,
+      citedClaimCount,
       claimIdsWithoutEvidence,
     },
   };

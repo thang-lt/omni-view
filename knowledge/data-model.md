@@ -8,7 +8,6 @@
 - `EvidenceRecord`: source ID, quote, locator, surrounding context, extraction time và content hash.
 - `ClaimRecord`: claim type, evidence hỗ trợ/phản chứng, assumptions, verdict và confidence reason.
 - `WarningRecord`: target, taxonomy, observable indicator, evidence IDs, alternative explanation, severity, confidence và review status.
-- `CoverageReport`: 7 requirements, nhóm đã có/thiếu, ratio và complete flag.
 
 Factory bắt buộc HTTP(S), cấm source tự tham chiếu upstream, cấm một evidence vừa support vừa contradict, yêu cầu evidence cho verdict supported/unsupported và yêu cầu warning có evidence.
 
@@ -22,8 +21,13 @@ type ExtractedSourcePacket = {
   title: string;
   url: string;
   excerpt: string;
-  locator: string; // direct source excerpt, Gemini grounding support, hoặc metadata-only
+  locator: string; // locator của passage chính để tương thích history cũ
   fullTextStatus: "read" | "partial" | "grounded-support" | "metadata-only" | "inaccessible";
+  evidencePassages?: Array<{
+    kind: "direct" | "grounding-support";
+    text: string;
+    locator: string;
+  }>;
 };
 
 type SourceWarningArtifact = {
@@ -31,6 +35,8 @@ type SourceWarningArtifact = {
   observableIndicator: string;
   evidenceQuote: string;
   evidenceVerified: boolean;
+  evidenceLocator?: string;
+  evidenceProvenance?: "direct" | "grounding-support";
   alternativeExplanation: string | null;
   severity: "info" | "low" | "medium" | "high";
   confidence: "low" | "medium" | "high";
@@ -45,20 +51,51 @@ type ClaimArtifact = {
   type: "empirical" | "causal" | "predictive" | "interpretive" | "normative";
   verdict: "supported" | "mixed" | "unsupported" | "unresolved";
   confidence: "low" | "medium" | "high";
+  confidenceReason: string;
   citations: Array<{
+    relationship: "supports" | "contradicts" | "context";
     sourceId: string;
-    locator: string; // source locator + character offset trong excerpt
+    locator: string; // passage locator + character offset
     quote: string;
-    evidenceVerified: true;
+    textMatchVerified: true;
+    provenance: "direct" | "grounding-support";
   }>;
   contradictingSourceIds: string[];
   unresolvedQuestions: string[];
 };
+
+type PerspectiveArtifact = {
+  perspectives: Array<{
+    id: string; // nhãn model tự do, không phải taxonomy cố định
+    thesis: string;
+    sourceIds: string[];
+    stakeholderGroups: string[];
+    assumptions: string[];
+    omissions: string[];
+    strongestCounterargument: string;
+  }>;
+  blindSpots: string[];
+  markdown: string; // được sinh deterministically từ dữ liệu trên
+};
+
+type ProviderAssessmentArtifact = {
+  providerId: string;
+  providerName: string;
+  reputationAssessment: "established" | "mixed" | "limited-evidence" | "unknown";
+  politicalOrientation: string;
+  ownershipAndAffiliations: string[];
+  reputationSignals: string[];
+  caveats: string[];
+  verificationCitations: Array<{ title: string; url: string }>;
+  reviewStatus: "machine-only";
+};
 ```
 
-Warning artifact giữ `evidenceQuote`; quote chỉ được xác minh nếu dài tối thiểu 20 ký tự và là exact substring của excerpt. Claim citation cũng yêu cầu exact substring nhưng chỉ cần quote không rỗng. Coverage tags được lọc qua allowlist 7 giá trị, tối đa 4 tag/nguồn và bị xóa với nguồn không `read`/`partial`.
+Warning artifact giữ `evidenceQuote`; quote chỉ được xác minh nếu dài tối thiểu 20 ký tự và là exact substring của một evidence passage. Claim citation áp dụng cùng ngưỡng, lưu quan hệ support/contradiction/context và provenance. Verdict được kiểm tra theo quan hệ citation; claim chỉ dựa vào grounding-support bị giới hạn confidence ở `medium`.
 
-Local `GeminiResearch` còn lưu report, tối đa 8 citations, agent outputs, heuristic source clusters, audit status, coverage, claims, citation audit và model. History nằm tại `localStorage` key `research-desk:runs:v2`, tối đa 5 record và 20 log/record.
+`PerspectiveArtifact` lưu 1–4 góc nhìn có thesis, source IDs, stakeholder groups, assumptions, omissions và phản biện mạnh nhất; Markdown UI được tạo deterministically từ artifact. Các ID như `official_authority_perspective` hoặc `critical_public_perspective` chỉ là nhãn model tự do. `ProviderAssessmentArtifact.verificationCitations` chỉ chứa các URL mà Auditor khai báo cho đúng provider và parser đối chiếu được với grounding citations của batch.
+
+Local `GeminiResearch` còn lưu report, tối đa 8 citations, agent outputs, heuristic source clusters, audit status, claims, citation audit và model. History nằm tại `localStorage` key `research-desk:runs:v2`, tối đa 5 record và 20 log/record.
 
 ## 3. D1 schema và migration
 
@@ -90,6 +127,6 @@ Không được lưu Gemini API key vào D1.
 ## 5. Khoảng cách model còn lại
 
 - Live claim evidence có character offset trong excerpt, nhưng chưa có paragraph/page/timestamp locator ổn định hoặc durable content hash.
-- Warning evidence link trong UI được suy ra từ excerpt, chưa có Evidence row runtime.
+- Warning evidence locator trong UI được xác minh lại từ evidence passages khi hydrate history, nhưng chưa có Evidence row runtime.
 - Source ownership, funding và upstream metadata chưa được tự động enrich.
 - Chưa lưu prompt version, search query, token usage hoặc raw grounding support spans trong run.

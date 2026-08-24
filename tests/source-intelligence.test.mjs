@@ -3,7 +3,6 @@ import test from "node:test";
 
 import {
   auditCitationCompleteness,
-  buildCoverageGate,
   canonicalizeSourceUrl,
   clusterSourceFamilies,
 } from "../application/research/source-intelligence.ts";
@@ -30,22 +29,6 @@ test("clusters exact copies and explicit upstream provenance, but not a whole pu
     ["independent"],
   ]);
   assert.equal(families[0].rootSourceId, "wire");
-});
-
-test("coverage gate counts independent families rather than duplicate URLs", () => {
-  const result = buildCoverageGate(
-    [
-      { id: "primary", familyId: "official", coverageTags: ["primary"] },
-      { id: "copy", familyId: "official", coverageTags: ["primary"] },
-      { id: "critic", familyId: "civil-society", coverageTags: ["critic_affected"] },
-    ],
-    { requiredCategories: ["primary", "critic_affected", "local_expert"], minimumFamiliesPerCategory: 1 },
-  );
-
-  assert.equal(result.passed, false);
-  assert.deepEqual(result.missingCategories, ["local_expert"]);
-  assert.equal(result.matrix.primary.independentFamilyCount, 1);
-  assert.deepEqual(result.matrix.primary.sourceIds, ["copy", "primary"]);
 });
 
 test("citation audit requires a known source and a precise evidence locator", () => {

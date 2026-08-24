@@ -3,8 +3,6 @@ import test from "node:test";
 
 import {
   DomainValidationError,
-  REQUIRED_COVERAGE,
-  buildCoverageReport,
   createClaim,
   createEvidence,
   createSource,
@@ -113,45 +111,5 @@ test("a warning records observable evidence without declaring a source false", (
   assert.throws(
     () => createWarning({ ...warning, evidenceIds: [] }),
     (error) => error instanceof DomainValidationError && error.issues.some((issue) => issue.code === "missing_evidence"),
-  );
-});
-
-test("coverage report exposes missing perspectives instead of silently passing", () => {
-  const report = buildCoverageReport([
-    { requirement: "primary-source", sourceIds: ["source-1"] },
-    { requirement: "claimant", sourceIds: ["source-2"] },
-    { requirement: "counterparty", sourceIds: [] },
-  ]);
-
-  assert.deepEqual(REQUIRED_COVERAGE, [
-    "primary-source",
-    "claimant",
-    "counterparty",
-    "affected-group",
-    "independent-expert",
-    "local-perspective",
-    "direct-counterevidence",
-  ]);
-  assert.equal(report.complete, false);
-  assert.deepEqual(report.metRequirements, ["primary-source", "claimant"]);
-  assert.deepEqual(report.missingRequirements, [
-    "counterparty",
-    "affected-group",
-    "independent-expert",
-    "local-perspective",
-    "direct-counterevidence",
-  ]);
-  assert.equal(report.coverageRatio, 2 / 7);
-  assert.ok(Object.isFrozen(report.entries));
-});
-
-test("coverage rejects unknown requirements and unknown source identifiers", () => {
-  assert.throws(
-    () => buildCoverageReport([{ requirement: "majority-vote", sourceIds: ["source-1"] }]),
-    (error) => error instanceof DomainValidationError,
-  );
-  assert.throws(
-    () => buildCoverageReport([{ requirement: "primary-source", sourceIds: [""] }]),
-    (error) => error instanceof DomainValidationError,
   );
 });
