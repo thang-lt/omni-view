@@ -25,6 +25,7 @@
 # Next.js & ViNext & Bundler artifacts
 /.next/
 /.vinext/
+/.vite/
 /out/
 /dist/
 next-env.d.ts
